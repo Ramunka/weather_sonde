@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from .models import User, Flight, Telemetry, Log, Alarm, Device, GroundReference
+from .models import User, Flight, Telemetry, Log, Alarm, Device, GroundReference, FlightStatus
 from datetime import datetime
 from .extensions import db
 from flask import flash
@@ -284,29 +284,6 @@ def flight_status(flight_id):
         "updated_at": status.updated_at.isoformat() if status.updated_at else None
     })
 
-@bp.route('/flight/<int:flight_id>/start', methods=['POST'])
-@login_required
-def start_flight(flight_id):
-    flight = Flight.query.get_or_404(flight_id)
-    if flight.status != 'pre-flight':
-        return jsonify({"error": "Flight must be in 'pre-flight' state to start."}), 400
-
-    flight.status = 'flight'
-    db.session.commit()
-    return jsonify({"message": "Flight started.", "new_status": flight.status})
-
-
-@bp.route('/flight/<int:flight_id>/end', methods=['POST'])
-@login_required
-def end_flight(flight_id):
-    flight = Flight.query.get_or_404(flight_id)
-    if flight.status != 'flight':
-        return jsonify({"error": "Flight must be in 'flight' state to end."}), 400
-
-    flight.status = 'post-flight'
-    db.session.commit()
-    return jsonify({"message": "Flight ended.", "new_status": flight.status})
-
 @bp.route('/flight/<int:flight_id>/calibrate', methods=['POST'])
 #@login_required
 def calibrate_ground(flight_id):
@@ -403,4 +380,41 @@ def release_flight(flight_id):
     db.session.commit()
 
     return jsonify({"message": "Flight released.", "release_ts": now.isoformat(), "new_status": "flight"})
+
+@bp.route('/flight/<int:flight_id>/end', methods=['POST'])
+@login_required
+def end_flight(flight_id):
+    flight = Flight.query.get_or_404(flight_id)
+
+    if flight.status not in ['pre-flight', 'flight']:
+        return jsonify({"error": f"Cannot end flight from status '{flight.status}'."}), 400
+
+    flight.status = 'post-flight'
+
+    # Record end timestamp
+    status = FlightStatus.query.filter_by(flight_id=flight_id).first()
+    if status:
+        status.end_ts = datetime.utcnow()
+
+    log = Log(
+        flight_id=flight.id,
+        level='INFO',
+        message=f"Flight manually ended at {datetime.utcnow().isoformat()} UTC from status '{flight.status}'"
+    )
+
+    db.session.add(log)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Flight marked as ended.",
+        "new_status": "post-flight"
+    })
+
+@bp.route('/api/logs/<int:flight_id>')
+@login_required
+def get_logs(flight_id):
+    logs = Log.query.filter_by(flight_id=flight_id).order_by(Log.timestamp.desc()).limit(20).all()
+    return jsonify({
+        "logs": [{"message": log.message, "timestamp": log.timestamp.isoformat()} for log in logs]
+    })
 

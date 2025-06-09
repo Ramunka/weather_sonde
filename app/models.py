@@ -102,6 +102,7 @@ class FlightStatus(db.Model):
     max_altitude = db.Column(db.Float)
     min_pressure = db.Column(db.Integer)
     release_ts = db.Column(db.DateTime, nullable=True)
+    end_ts = db.Column(db.DateTime, nullable=True)
 
 class GroundReference(db.Model):
     __tablename__ = "ground_reference"

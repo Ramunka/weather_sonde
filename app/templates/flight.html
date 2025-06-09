@@ -30,10 +30,36 @@
         updateTelemetry();
 
         document.addEventListener('DOMContentLoaded', function () {
+        const flightId = {{ flight.id }};
+        const flightStatus = "{{ flight.status }}";
+
+        // Time updates
+        function updateTime() {
+            const now = new Date();
+            document.getElementById("utc-time").textContent = now.toUTCString().split(" ")[4];
+            document.getElementById("local-time").textContent = now.toTimeString().split(" ")[0];
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Telemetry
+        function updateTelemetry() {
+            fetch('/api/telemetry')
+                .then(response => response.json())
+                .then(data => {
+                    for (const [key, value] of Object.entries(data)) {
+                        const element = document.getElementById(key);
+                        if (element) element.textContent = value;
+                    }
+                });
+        }
+        setInterval(updateTelemetry, 2000);
+        updateTelemetry();
+
+        // Calibrate button
         const calibrateBtn = document.getElementById('calibrateBtn');
         const calibrateStatus = document.getElementById('calibrateStatus');
 
-        // Disable button if flight has already started
         if (flightStatus !== 'pre-flight') {
             calibrateBtn.disabled = true;
             calibrateStatus.textContent = "Calibration disabled: Flight already started.";
@@ -53,7 +79,7 @@
                             calibrateStatus.textContent = "Calibration successful.";
                         }
                         if (flightStatus === 'pre-flight') {
-                            calibrateBtn.disabled = false; // allow re-calibration
+                            calibrateBtn.disabled = false;
                         }
                     })
                     .catch(err => {
@@ -61,9 +87,93 @@
                         console.error("Calibration error:", err);
                         calibrateBtn.disabled = false;
                     });
-            }, Math.random() * 3000 + 2000);  // 2–5 seconds wait
+            }, 2000); // <-- delay here
         });
+
+        // Release button
+        const releaseBtn = document.getElementById('releaseBtn');
+        const releaseStatus = document.getElementById('releaseStatus');
+
+        if (flightStatus !== 'pre-flight') {
+            releaseBtn.disabled = true;
+            releaseStatus.textContent = "Release disabled: Already in flight or ended.";
+        }
+
+        releaseBtn.addEventListener('click', function () {
+            releaseStatus.textContent = "Releasing sonde...";
+            releaseBtn.disabled = true;
+
+            fetch(`/flight/${flightId}/release`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        releaseStatus.textContent = `Error: ${data.error}`;
+                        releaseBtn.disabled = false;
+                    } else {
+                        releaseStatus.textContent = `Sonde released at ${data.release_ts}`;
+                        document.getElementById('calibrateBtn').disabled = true;
+                    }
+                })
+                .catch(err => {
+                    releaseStatus.textContent = "Release failed.";
+                    console.error(err);
+                    releaseBtn.disabled = false;
+                });
+        });
+
+        // End button
+        const endFlightBtn = document.getElementById('endFlightBtn');
+        const endStatus = document.getElementById('endStatus');
+
+        if (flightStatus === 'post-flight') {
+            endFlightBtn.disabled = true;
+            endStatus.textContent = "Flight is already ended.";
+        }
+
+        endFlightBtn.addEventListener('click', function () {
+            if (!confirm("Are you sure you want to end this flight? This action is final.")) return;
+
+            endStatus.textContent = "Ending flight...";
+            endFlightBtn.disabled = true;
+
+            fetch(`/flight/${flightId}/end`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        endStatus.textContent = `Error: ${data.error}`;
+                        endFlightBtn.disabled = false;
+                    } else {
+                        endStatus.textContent = "Flight successfully ended.";
+                        document.getElementById('calibrateBtn')?.setAttribute('disabled', 'true');
+                        document.getElementById('releaseBtn')?.setAttribute('disabled', 'true');
+                    }
+                })
+                .catch(err => {
+                    endStatus.textContent = "Failed to end flight.";
+                    console.error(err);
+                    endFlightBtn.disabled = false;
+                });
+        });
+
+        // Logs
+        function updateLogs() {
+            fetch(`/api/logs/${flightId}`)
+                .then(res => res.json())
+                .then(data => {
+                    const logContainer = document.getElementById("log-entries");
+                    logContainer.innerHTML = "";
+                    data.logs.forEach(log => {
+                        const li = document.createElement("li");
+                        li.textContent = log.message;
+                        logContainer.appendChild(li);
+                    });
+                });
+        }
+
+        setInterval(updateLogs, 2000);
+        updateLogs();
     });
+
 
     </script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" /><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">    
@@ -130,10 +240,13 @@
 
         <div>
         <div class="mission-control-buttons">
-            <button>Start</button>
-            <button>Abort</button>
             <button id="calibrateBtn" class="btn btn-warning">Calibrate Ground</button>
             <p id="calibrateStatus" style="margin-top: 5px; font-size: 0.9em;"></p>
+            <button id="releaseBtn" class="btn btn-danger">Release Sonde</button>
+            <p id="releaseStatus" style="margin-top: 5px; font-size: 0.9em;"></p>
+            <button id="endFlightBtn" class="btn btn-dark">End Flight</button>
+            <p id="endStatus" style="margin-top: 5px; font-size: 0.9em;"></p>
+
 
         </div>
         
