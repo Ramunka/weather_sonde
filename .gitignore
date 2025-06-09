@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.env
+.env.*
+
+# IDE files
+*.idea/
+*.vscode/
+*.swp
+*.bak
+*.log
+*.db
+*.sqlite
+*.pem
+
+# Flask instance folder
+instance/
+
+# Alembic cache
+migrations/versions/*.pyc
+
+# Ignore PyCharm metadata
+.lgd-*

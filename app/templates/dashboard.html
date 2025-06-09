@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Your Mission Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Welcome, {{ current_user.username }}</h2>
+    <a href="{{ url_for('main.logout') }}" class="btn btn-outline-secondary">Logout</a>
+  </div>
+
+  <div class="mb-4">
+    <a href="{{ url_for('main.init_flight') }}" class="btn btn-primary">+ Initialize New Flight</a>
+  </div>
+
+  <h4>Your Flights</h4>
+  {% if flights %}
+    <ul class="list-group">
+      {% for flight in flights %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <div>
+            <strong>{{ flight.flight_name }}</strong><br>
+            <div>
+               <strong>{{ flight.mission_number }}</strong><br>
+               <small>Launched: {{ flight.start_time.strftime('%Y-%m-%d %H:%M:%S') }}</small>
+            </div>
+          </div>
+          <a href="{{ url_for('main.flight_dashboard', flight_id=flight.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted">No flights yet. Start one above.</p>
+  {% endif %}
+</div>
+{% endblock %}

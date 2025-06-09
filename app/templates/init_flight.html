@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Initialize New Flight</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      line-height: 1.5;
+    }
+    h1 {
+      margin-bottom: 1rem;
+    }
+    form {
+      max-width: 500px;
+    }
+    label {
+      display: block;
+      margin-top: 1rem;
+      font-weight: bold;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 0.4rem;
+      margin-top: 0.2rem;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 1.5rem;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+    }
+    .small-text {
+      font-size: 0.9rem;
+      color: #555;
+    }
+    .inline {
+      display: inline-block;
+      width: auto;
+    }
+    .inline + .inline {
+      margin-left: 0.5rem;
+    }
+    a {
+      display: inline-block;
+      margin-top: 2rem;
+      text-decoration: none;
+      color: #007BFF;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    #mask-input {
+      width: calc(100% - 120px);
+      display: inline-block;
+    }
+    #generate-mask {
+      width: 100px;
+      display: inline-block;
+    }
+    .flash-container {
+      margin-bottom: 1rem;
+    }
+    .flash {
+      padding: 0.6rem 1rem;
+      border-radius: 4px;
+      margin-bottom: 0.5rem;
+    }
+    .flash.error {
+      background-color: #f8d7da;
+      color: #842029;
+      border: 1px solid #f5c2c7;
+    }
+    .flash.success {
+      background-color: #d1e7dd;
+      color: #0f5132;
+      border: 1px solid #badbcc;
+    }
+  </style>
+</head>
+<body>
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-container">
+      {% for category, text in messages %}
+        <div class="flash {{ category }}">{{ text }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+  <h1>Initialize New Flight</h1>
+
+  <form method="POST" id="flight-form">
+    <!-- Device Serial Number + Generate Mask -->
+    <label for="device_sn">Device SN (hex):</label>
+    <div>
+      <input
+        type="text"
+        name="device_sn"
+        id="device_sn"
+        placeholder="e.g. 11951"
+        required
+        class="inline"
+      >
+      <button type="button" id="generate-mask" class="inline">Generate Mask</button>
+    </div>
+    <span class="small-text">Enter SN before generating a mask.</span>
+
+    <!-- Mask (read-only) -->
+    <label for="mask">Mask (hex):</label>
+    <input
+      type="text"
+      name="mask"
+      id="mask"
+      placeholder="Click ‘Generate Mask’"
+      readonly
+      required
+    >
+
+    <!-- Mission Number or Name -->
+    <label for="mission_number">Mission Number / Name:</label>
+    <input
+      type="text"
+      name="mission_number"
+      id="mission_number"
+      placeholder="e.g. M2025-07-01"
+      required
+    >
+
+    <!-- Planned Launch Time -->
+    <label for="planned_launch">Planned Launch Time (UTC):</label>
+    <input
+      type="datetime-local"
+      name="planned_launch"
+      id="planned_launch"
+      required
+    >
+
+    <!-- Start Location Coordinates -->
+    <label for="start_latitude">Launch Latitude (°):</label>
+    <input
+      type="number"
+      step="0.00001"
+      name="start_latitude"
+      id="start_latitude"
+      placeholder="e.g. 47.56168"
+      required
+    >
+
+    <label for="start_longitude">Launch Longitude (°):</label>
+    <input
+      type="number"
+      step="0.00001"
+      name="start_longitude"
+      id="start_longitude"
+      placeholder="e.g. -122.02694"
+      required
+    >
+
+
+    <label for="elevation">Launch Elevation (m):</label>
+    <input
+      type="number"
+      name="elevation"
+      id="elevation"
+      placeholder="e.g. 127"
+      required
+    >
+
+
+    <!-- Discussion / Comments -->
+    <label for="comments">Discussion / Notes:</label>
+    <textarea
+      name="comments"
+      id="comments"
+      rows="4"
+      placeholder="Any additional information…"
+      required
+    ></textarea>
+
+    <!-- Submit Button (initially disabled) -->
+    <button type="submit" id="submit-button" disabled>Submit Flight</button>
+  </form>
+
+  <a href="{{ url_for('main.dashboard') }}">&larr; Back to Dashboard</a>
+
+  <script>
+    (function() {
+      const deviceSnInput = document.getElementById('device_sn');
+      const maskInput = document.getElementById('mask');
+      const generateMaskBtn = document.getElementById('generate-mask');
+      const submitBtn = document.getElementById('submit-button');
+      const requiredFields = [
+        deviceSnInput,
+        document.getElementById('mission_number'),
+        document.getElementById('planned_launch'),
+        document.getElementById('start_latitude'),
+        document.getElementById('start_longitude'),
+        document.getElementById('comments'),
+        maskInput
+      ];
+
+      // Generate a random 6-digit hex string (uppercase)
+      function createRandomMask() {
+        const rand = Math.floor(Math.random() * 0x1000000); // 0x000000 to 0xFFFFFF
+        return rand.toString(16).toUpperCase().padStart(6, '0');
+      }
+
+      // Enable or disable submit button based on required fields
+      function updateSubmitState() {
+        const allFilled = requiredFields.every(field => field.value.trim() !== '');
+        submitBtn.disabled = !allFilled;
+      }
+
+      // Generate Mask button logic
+      generateMaskBtn.addEventListener('click', function() {
+        const snValue = deviceSnInput.value.trim();
+        if (!snValue) {
+          alert('Please enter the Device SN before generating a mask.');
+          return;
+        }
+        const newMask = createRandomMask();
+        maskInput.value = newMask;
+        updateSubmitState();
+      });
+
+      // When device SN changes, clear the existing mask
+      deviceSnInput.addEventListener('input', function() {
+        maskInput.value = '';
+        updateSubmitState();
+      });
+
+      // Add input listeners to required fields to update submit state
+      requiredFields.forEach(field => {
+        field.addEventListener('input', updateSubmitState);
+      });
+
+      // Initial check (in case browser autofills)
+      updateSubmitState();
+    })();
+  </script>
+</body>
+</html>
