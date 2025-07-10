@@ -14,47 +14,25 @@
         }
         setInterval(updateTime, 1000);
         window.onload = updateTime;
+
         function updateTelemetry() {
-            fetch('/api/telemetry')
-                .then(response => response.json())
-                .then(data => {
-                    for (const [key, value] of Object.entries(data)) {
-                        const element = document.getElementById(key);
-                        if (element) element.textContent = value;
-                    }
-                });
+          fetch(`/api/telemetry/${flightId}`)
+            .then(r => r.json())
+            .then(data => {
+              Object.entries(data).forEach(([key, value]) => {
+                const el = document.getElementById(key);
+                if (el) el.textContent = value;
+              });
+            })
+            .catch(console.error);
         }
 
-        // Fetch every second
         setInterval(updateTelemetry, 2000);
         updateTelemetry();
 
         document.addEventListener('DOMContentLoaded', function () {
         const flightId = {{ flight.id }};
         const flightStatus = "{{ flight.status }}";
-
-        // Time updates
-        function updateTime() {
-            const now = new Date();
-            document.getElementById("utc-time").textContent = now.toUTCString().split(" ")[4];
-            document.getElementById("local-time").textContent = now.toTimeString().split(" ")[0];
-        }
-        setInterval(updateTime, 1000);
-        updateTime();
-
-        // Telemetry
-        function updateTelemetry() {
-            fetch('/api/telemetry')
-                .then(response => response.json())
-                .then(data => {
-                    for (const [key, value] of Object.entries(data)) {
-                        const element = document.getElementById(key);
-                        if (element) element.textContent = value;
-                    }
-                });
-        }
-        setInterval(updateTelemetry, 2000);
-        updateTelemetry();
 
         // Calibrate button
         const calibrateBtn = document.getElementById('calibrateBtn');
@@ -87,7 +65,7 @@
                         console.error("Calibration error:", err);
                         calibrateBtn.disabled = false;
                     });
-            }, 2000); // <-- delay here
+            });
         });
 
         // Release button
@@ -155,22 +133,194 @@
                 });
         });
 
-        // Logs
+        function updateStatus() {
+          fetch(`/api/status/${flightId}`)
+            .then(r => r.json())
+            .then(s => {
+              const balloon   = document.getElementById('balloon');
+              const burst     = document.getElementById('burst');
+              const parachute = document.getElementById('parachute');
+              function setElement(el, pct) {
+                if (pct == null) {
+                  el.style.display = 'none';
+                } else {
+                  el.style.display = '';
+                  el.style.bottom  = pct + '%';
+                }
+              }
+              setElement(balloon,   s.balloon_position);
+              setElement(burst,     s.burst_position);
+              setElement(parachute, s.parachute_position);
+
+              // — Alert logic, one by one —
+              // Helper: clear all lit/blink classes from an element
+              function clearAll(el) {
+                ['green-lit','orange-lit','red-lit',
+                 'green-blink','orange-blink','red-blink',
+                 'green-unlit','orange-unlit','red-unlit']
+                  .forEach(c => el.classList.remove(c));
+              }
+
+              // ——— Receiver & Parser lights ———
+                ['receiver','parser'].forEach(comp => {
+                const state = s[`${comp}_state`];         // e.g. 'running' | 'idle' | 'error'
+                const el    = document.getElementById(`alert-${comp}`);
+                if (!el) return;
+
+                // clear previous classes
+                ['green-lit','green-blink','red-lit','orange-lit','orange-blink','green-unlit']
+                  .forEach(c => el.classList.remove(c));
+
+                if (state === 'running') {
+                  el.classList.add('green-lit');
+                } else if (state === 'idle') {
+                  el.classList.add('green-lit','green-blink');
+                } else {  // 'error' or anything else
+                  el.classList.add('red-lit');
+                }
+              });
+
+              // 3) Signal
+              (()=>{
+                const el = document.getElementById('alert-signal');
+                clearAll(el); el.classList.add('alert');
+                if (!s.signal_level)               el.classList.add('green-unlit');
+                else if (s.signal_level === 'green')  el.classList.add('green-lit');
+                else if (s.signal_level === 'yellow') el.classList.add('orange-lit');
+                else if (s.signal_level === 'red')    el.classList.add('red-lit');
+              })();
+
+              // 4) Packet
+              (()=>{
+                const el = document.getElementById('alert-packet');
+                clearAll(el); el.classList.add('alert');
+                if (s.receiver === 'error')       {
+                  el.classList.add('green-unlit');
+                } else if (s.packet === 'bad')    {
+                  el.classList.add('orange-lit','orange-blink');
+                } else if (s.packet === 'good')   {
+                  el.classList.add('green-lit');
+                } else /* off */                  {
+                  el.classList.add('green-unlit');
+                }
+              })();
+
+              // 5) Age
+              (()=>{
+                const el = document.getElementById('alert-age');
+                clearAll(el); el.classList.add('alert');
+                if (s.age === 'warn')             el.classList.add('orange-lit');
+                else                               el.classList.add('green-unlit');
+              })();
+
+              // 6) Calibrated
+              (()=>{
+                const el = document.getElementById('alert-calibrated');
+                clearAll(el); el.classList.add('alert');
+                if (s.calibrated)                 el.classList.add('green-lit');
+                else                               el.classList.add('green-unlit');
+              })();
+
+              // 7) Burst
+              (()=>{
+                const el = document.getElementById('alert-burst');
+                clearAll(el); el.classList.add('alert');
+                if (s.burst)                      el.classList.add('green-lit');
+                else                               el.classList.add('green-unlit');
+              })();
+
+              // 8) Sensor
+              (()=>{
+                const el = document.getElementById('alert-sensor');
+                clearAll(el); el.classList.add('alert');
+                if (s.sensor === 'ok')            el.classList.add('green-unlit');
+                else /* fault */                  el.classList.add('red-lit','red-blink');
+              })();
+
+              // 9) Temp Low
+              (()=>{
+                const el = document.getElementById('alert-temp-low');
+                clearAll(el); el.classList.add('alert');
+                if (s.temp_low)                   el.classList.add('orange-lit');
+                else                               el.classList.add('green-unlit');
+              })();
+
+              // 10) Meas Degrad
+              (()=>{
+                const el = document.getElementById('alert-data-degrad');
+                clearAll(el); el.classList.add('alert');
+                if (s.meas_degrad)                el.classList.add('red-lit');
+                else                               el.classList.add('green-unlit');
+              })();
+
+              // 11) GPS Fix
+              (()=>{
+                const el = document.getElementById('alert-gps-fix');
+                clearAll(el); el.classList.add('alert');
+                if (!s.receiver || s.receiver==='error') {
+                  el.classList.add('green-unlit');
+                } else if (s.gps_fix)             el.classList.add('green-lit');
+                else                               el.classList.add('red-lit');
+              })();
+
+              // 12) GPS Degrad
+              (()=>{
+                const el = document.getElementById('alert-gps-degrad');
+                clearAll(el); el.classList.add('alert');
+                if (!s.receiver || s.receiver==='error') {
+                  el.classList.add('green-unlit');
+                } else if (!s.gps_degrad)          {
+                  el.classList.add('green-unlit');
+                } else if (s.gps_degrad === 'yellow') {
+                  el.classList.add('orange-lit');
+                } else /* 'red' */                   {
+                  el.classList.add('red-lit');
+                }
+              })();
+            })
+            .catch(console.error);
+        }
+
+        // run it every 2 s
+        setInterval(updateStatus, 2000);
+        updateStatus();
+
+
+
+
         function updateLogs() {
             fetch(`/api/logs/${flightId}`)
                 .then(res => res.json())
                 .then(data => {
-                    const logContainer = document.getElementById("log-entries");
-                    logContainer.innerHTML = "";
+                    if (!data.logs || data.logs.length === 0) return;
+
+                    const logTableBody = document.querySelector("#log-entries tbody");
+                    if (!logTableBody) return;
+
+                    logTableBody.innerHTML = "";
+
                     data.logs.forEach(log => {
-                        const li = document.createElement("li");
-                        li.textContent = log.message;
-                        logContainer.appendChild(li);
+                        const row = document.createElement("tr");
+
+                        const ts = document.createElement("td");
+                        const date = new Date(log.timestamp);
+                        ts.textContent = date.toISOString().split("T")[1].split(".")[0] + " UTC";
+                        row.appendChild(ts);
+
+                        const level = document.createElement("td");
+                        level.innerHTML = `<span class="log-level log-${log.level.toLowerCase()}">${log.level}</span>`;
+                        row.appendChild(level);
+
+                        const msg = document.createElement("td");
+                        msg.textContent = log.message;
+                        row.appendChild(msg);
+
+                        logTableBody.appendChild(row);
                     });
                 });
         }
 
-        setInterval(updateLogs, 2000);
+        setInterval(updateLogs, 5000);
         updateLogs();
     });
 
@@ -195,6 +345,7 @@
                 <td id="date">{{ flight.start_time.strftime('%Y-%m-%d') }}</td>
             </tr>
         </table>
+
         <table>
             <tr>
                 <th>UTC</th>
@@ -222,19 +373,19 @@
                     <div>1000 mb</div>
                 </div>
                 <div class="profile">
-                    <div class="balloon" id="balloon" style="bottom: {{ balloon_position or 80 }}%">🎈</div>
-                    <div class="parachute" id="parachute" style="bottom: {{ parachute_position or 60 }}%">🪂</div>
-                    <div class="balloon" id="burst" style="bottom: {{ burst_position or 0 }}%">💥</div>
+                    <div class="balloon" id="balloon">🎈</div>
+                    <div class="parachute" id="parachute">🪂</div>
+                    <div class="baloon" id="burst">💥</div>
                 </div>
             </div>
             <table>
                 <tr><th>Temp</th><td id="temp">{{ telemetry.temperature or "N/A" }}</td></tr>
-                <tr><th>Dew Point</th><td id="dew-point">{{ telemetry.dew_point or "N/A" }}</td></tr>
+                <tr><th>Humidity</th><td id="humidity">{{ telemetry.humidity or "N/A" }}</td></tr>
                 <tr><th>Pressure</th><td id="pressure">{{ telemetry.pressure or "N/A" }}</td></tr>
+                <tr><th>Speed</th><td id="speed">{{ telemetry.speed or "N/A" }}</td></tr>
                 <tr><th>GPS Altitude</th><td id="gps-altitude">{{ telemetry.gps_altitude or "N/A" }}</td></tr>
                 <tr><th>Altitude Δ</th><td id="altitude-delta">{{ telemetry.altitude_delta or "N/A" }}</td></tr>
                 <tr><th>Peak Altitude</th><td id="peak-altitude">{{ telemetry.peak_altitude or "N/A" }}</td></tr>
-                <tr><th>Peak Speed</th><td id="peak-speed">{{ telemetry.peak_speed or "N/A" }}</td></tr>
             </table>
         </div>
 
@@ -253,9 +404,6 @@
         <div class="hardware-metrics">
             <strong>Hardware Metrics</strong>
             <table>
-                <tr><th>CPU Temp</th><td id="cpu-temp">{{ telemetry.cpu_temperature or "N/A" }}</td></tr>
-                <tr><th>Battery</th><td id="battery">{{ telemetry.battery or "N/A" }}</td></tr>
-                <tr><th>Voltage</th><td id="voltage">{{ telemetry.voltage or "N/A" }}</td></tr>
                 <tr><th>Signal Strength</th><td id="signal-strength">{{ telemetry.signal_strength or "N/A" }}</td></tr>
             </table>
         </div>
@@ -267,24 +415,20 @@
                     <tr>
                         <th>Metric</th>
                         <th>Expected</th>
-                        <th>Actual</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
                         <th>Expected Ascent Rate</th>
                         <td id="expected-ascent">{{ flight.expected_ascent_rate or "N/A" }}</td>
-                        <td id="actual-ascent">{{ telemetry.ascent_rate or "N/A" }}</td>
                     </tr>
                     <tr>
                         <th>Helium Volume</th>
                         <td id="helium-volume">{{ flight.expected_helium_volume or "N/A" }}</td>
-                        <td id="actual-helium-volume">{{ telemetry.helium_volume or "N/A" }}</td>
                     </tr>
                     <tr>
                         <th>Burst Altitude</th>
                         <td id="burst-altitude">{{ flight.expected_burst_altitude or "N/A" }}</td>
-                        <td id="actual-burst-altitude">{{ telemetry.burst_altitude or "N/A" }}</td>
                     </tr>
                 </tbody>
             </table>
@@ -306,38 +450,53 @@
                 attribution: '© OpenStreetMap'
             }).addTo(map);
 
+            const markerLayer = L.layerGroup().addTo(map);
+
             function updateGPS() {
-                const fld = {{ flight.id }};
-                fetch(`/api/gps/${fld}`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (!data || data.length === 0) {
-                            // no points; you might want to show a “No GPS yet” message
-                            return;
-                        }
+              const fld = {{ flight.id }};
+              fetch(`/api/gps/${fld}`)
+                .then(res => res.json())
+                .then(data => {
+                  if (!data || data.length === 0) return;
 
-                        // Remove old path if it exists
-                        if (pathLayer) map.removeLayer(pathLayer);
+                  if (pathLayer) {
+                    map.removeLayer(pathLayer);
+                    pathLayer = null;
+                  }
+                  markerLayer.clearLayers();
 
-                        // Extract just the [lat,lng] pairs
-                        const pathCoords = data.map(point => point.coords);
+                  // Draw full polyline anyway
+                  const pathCoords = data.map(pt => pt.coords);
+                  pathLayer = L.polyline(pathCoords, { color: 'blue', weight: 3 }).addTo(map);
 
-                        // Draw the polyline
-                        pathLayer = L.polyline(pathCoords, { color: 'blue', weight: 3 }).addTo(map);
+                  data.forEach(pt => {
+                    // choose icon
+                    let marker;
+                    if (pt.icon === 'start') {
+                      marker = L.marker(pt.coords, { title: "Launch" })
+                                .bindPopup(`Launch @ ${pt.timestamp}`);
+                    }
+                    else if (pt.icon === 'burst') {
+                      marker = L.marker(pt.coords, { title: "Burst" })
+                                .bindPopup(`Burst @ ${pt.timestamp}`);
+                    }
+                    else if (pt.icon === 'end') {
+                      marker = L.marker(pt.coords, { title: "Latest" })
+                                .bindPopup(`Latest @ ${pt.timestamp}`);
+                    }
+                    else {
+                      // small circle without icon
+                      marker = L.circleMarker(pt.coords, { radius: 3 });
+                    }
+                    markerLayer.addLayer(marker);
 
-                        // Place markers (optional)
-                        data.forEach((point, index) => {
-                            const marker = L.marker(point.coords)
-                                .addTo(map)
-                                .bindPopup(`Point ${index+1}<br>Alt: ${point.altitude} m<br>Time: ${point.timestamp}`);
-                            if (index === data.length - 1) {
-                                marker.openPopup();
-                            }
-                        });
+                    // open only start, burst, end
+                    if (pt.icon) marker.openPopup();
+                  });
 
-                        // Fit map bounds
-                        map.fitBounds(pathLayer.getBounds());
-                    });
+                  map.fitBounds(pathLayer.getBounds());
+                })
+                .catch(console.error);
             }
 
             // Update every 5 seconds
@@ -355,29 +514,49 @@
         </table>
     </div>
     <div class="alert-panel">
-        <div class="alert-column">
-            <div class="alert {{ 'green-lit' if telemetry.alt_ok else 'green-unlit' }}" id="alert-alt-ok">ALT OK</div>
-            <div class="alert {{ 'green-lit' if telemetry.gps_ready else 'green-unlit' }}" id="alert-gps-ready">GPS READY</div>
-            <div class="alert {{ 'green-lit' if telemetry.battery_ok else 'green-unlit' }}" id="alert-battery">BATTERY</div>
-        </div>
-        <div class="alert-column">
-            <div class="alert {{ 'orange-lit' if telemetry.temp_warn else 'orange-unlit' }}">TEMP WARN</div>
-            <div class="alert {{ 'orange-lit' if telemetry.signal_low else 'orange-unlit' }}">SIGNAL LOW</div>
-        </div>
-        <div class="alert-column">
-            <div class="alert {{ 'red-lit' if telemetry.fail_safe else 'red-unlit' }}">FAIL SAFE</div>
-            <div class="alert {{ 'red-lit' if telemetry.tx_fail else 'red-unlit' }}">TX FAIL</div>
-            <div class="alert {{ 'red-lit' if telemetry.low_power else 'red-unlit' }}">LOW PWR</div>
-        </div>
+      <div class="alert-column">
+        <div id="alert-receiver"   class="alert green-unlit">RECEIVER</div>
+        <div id="alert-parser"     class="alert green-unlit">PARSER</div>
+        <div id="alert-sensor"     class="alert green-unlit">SENSOR</div>
+      </div>
+      <div class="alert-column">
+        <div id="alert-signal"     class="alert green-unlit">SIGNAL</div>
+        <div id="alert-packet"     class="alert green-unlit">PACKET</div>
+        <div id="alert-age"        class="alert green-unlit">AGE</div>
+      </div>
+      <div class="alert-column">
+        <div id="alert-calibrated" class="alert green-unlit">CALIBRATED</div>
+        <div id="alert-burst"      class="alert green-unlit">BURST</div>
+        <div id="alert-temp-low"   class="alert green-unlit">TEMP LOW</div>
+      </div>
+      <div class="alert-column">
+        <div id="alert-data-degrad" class="alert green-unlit">MEAS DEGRAD</div>
+        <div id="alert-gps-fix"     class="alert green-unlit">GPS FIX</div>
+        <div id="alert-gps-degrad"  class="alert green-unlit">GPS DEGRAD</div>
+      </div>
     </div>
-    <div class="log" id="log-container">
-        <strong>Log:</strong>
-        <ul id="log-entries">
-            {% for log in logs %}
-                <li>{{ log.message }}</li>
-            {% endfor %}
-        </ul>
+    <div class="log-panel">
+        <table class="log-table" id="log-entries">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Level</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td><span class="log-level log-{{ log.level|lower }}">{{ log.level }}</span></td>
+                    <td>{{ log.message }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
     </div>
+
 </div>
 
 </body>

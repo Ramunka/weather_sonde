@@ -1,165 +1,234 @@
-      body {
-            font-family: monospace;
-            background-color: #ffffff;
-            color: #000;
-            margin: 20px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: auto auto auto auto;
-            grid-template-areas:
-                "header header"
-                "main status"
-                "footer status";
-            gap: 5px;
-        }
-        .section {
-            border: 2px solid black;
-            padding: 10px;
-        }
-        .header {
-            grid-area: header;
-            display: flex;
-            justify-content: space-between;
-        }
-        .main {
-            grid-area: main;
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-        }
-        .footer {
-            grid-area: footer;
-        }
-        .status {
-            grid-area: status;
-            display: flex-start;
-            flex-direction: column;
+body {
+    font-family: monospace;
+    background-color: #ffffff;
+    color: #000;
+    margin: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas:
+        "header header"
+        "main status"
+        "footer status";
+    gap: 5px;
+}
+.section {
+    border: 2px solid black;
+    padding: 10px;
+}
+.header {
+    grid-area: header;
+    display: flex;
+    justify-content: space-between;
+}
+.main {
+    grid-area: main;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+.footer {
+    grid-area: footer;
+}
+.status {
+    grid-area: status;
+    display: flex-start;
+    flex-direction: column;
 
-            flex-grow: 1;
-            justify-content: space-between;
-        }
-        .profile-wrapper {
-            display: flex;
-            gap: 10px;
-            align-items: flex-end;
-            border: 1px solid black;
-            padding: 5px;
-            margin-bottom: 10px;
-        }
- .scale {
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            height: 200px;
-            font-size: 12px;
-            border-right: 1px solid black;
-            padding-right: 4px;
-        }
-        .profile {
-            height: 200px;
-            position: relative;
-            border: 1px solid black;
-            width: 100px;
-        }
-        .balloon {
-            position: absolute;
-            left: 10px;
-            font-size: 14px;
-        }
-        .parachute {
-            position: absolute;
-            left: 10px;
-            bottom: 60%;
-            font-size: 14px;
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-        }
-        th, td {
-            border: 1px solid black;
-            padding: 6px;
-            text-align: left;
-        }
-        .header table {
-            width: auto;
-        }
-        .log {
-            margin-top: 10px;
-            border: 1px solid black;
-            padding: 5px;
-            height: 200px;
-            overflow-y: scroll;
-            font-size: 14px;
-            white-space: pre-wrap;
-            background-color: #f4f4f4;
-        }
+    flex-grow: 1;
+    justify-content: space-between;
+}
+.profile-wrapper {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    border: 1px solid black;
+    padding: 5px;
+    margin-bottom: 10px;
+}
+.scale {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 200px;
+    font-size: 12px;
+    border-right: 1px solid black;
+    padding-right: 4px;
+}
+.profile {
+    height: 200px;
+    position: relative;
+    border: 1px solid black;
+    width: 100px;
+}
+.balloon {
+    position: absolute;
+    left: 10px;
+    font-size: 14px;
+}
+.parachute {
+    position: absolute;
+    left: 50px;
+    bottom: 60%;
+    font-size: 14px;
+}
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+th, td {
+    border: 1px solid black;
+    padding: 6px;
+    text-align: left;
+}
+.header table {
+    width: auto;
+}
+.log {
+    margin-top: 10px;
+    border: 1px solid black;
+    padding: 5px;
+    height: 200px;
+    overflow-y: scroll;
+    font-size: 14px;
+    white-space: pre-wrap;
+    background-color: #f4f4f4;
+}
+.log-panel {
+    background: #f4f4f4;
+    padding: 10px;
+    border: 1px solid #ccc;
+    overflow-x: auto;
+    margin-top: 1em;
+}
+
+.log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.log-table th, .log-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+}
+
+.log-level {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+.log-info {
+    background-color: #d9edf7;
+    color: #31708f;
+}
+
+.log-warning {
+    background-color: #fcf8e3;
+    color: #8a6d3b;
+}
+
+.log-error {
+    background-color: #f2dede;
+    color: #a94442;
+}
+
 .alert-panel {
-            margin-top: 10px;
-            border: 1px solid black;
-            padding: 5px;
-            display: flex;
-            gap: 20px;
-            justify-content: space-around;
-        }
-        .alert-column {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .alert {
-            width: 100px;
-            padding: 5px;
-            text-align: center;
-            font-weight: bold;
-            border: 1px solid black;
-        }
-        .green-lit {
-            background-color: limegreen;
-            color: white;
-            animation: flash 0.3s infinite;
-        }
-        .green-unlit {
-            background-color: #fafafa;
-            color: #e6e6e6;
-        }
-        .orange-lit {
-            background-color: orange;
-            color: white;
-        }
-        .orange-unlit {
-            background-color: #fafafa;
-            color: #e6e6e6;
-        }
-        .red-lit {
-            background-color: red;
-            color: white;
-        }
-        .red-unlit {
-            background-color: #fafafa;
-            color: #e6e6e6;
-        }
-        @keyframes flash {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0; }
-        }
-        .mission-control-buttons {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 5px;
-            border: 1px solid black;
-            padding: 10px;
-        }
-        .hardware-metrics {
-            margin-top: 10px;
-            border: 1px solid black;
-            padding: 5px;
-            font-size: 14px;
-        }
-        .flight-params {
-            margin-top: 10px;
-            border: 1px solid black;
-            padding: 5px;
-            font-size: 14px;
-        }
+    margin-top: 10px;
+    border: 1px solid black;
+    padding: 5px;
+    display: flex;
+    gap: 20px;
+    justify-content: space-around;
+}
+.alert-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.alert {
+    width: 100px;
+    padding: 5px;
+    text-align: center;
+    font-weight: bold;
+    border: 1px solid black;
+}
+.green-lit {
+    background-color: limegreen;
+    color: white;
+}
+.green-unlit {
+    background-color: #fafafa;
+    color: #e6e6e6;
+}
+.orange-lit {
+    background-color: orange;
+    color: white;
+}
+.orange-unlit {
+    background-color: #fafafa;
+    color: #e6e6e6;
+}
+.red-lit {
+    background-color: red;
+    color: white;
+}
+.red-unlit {
+    background-color: #fafafa;
+    color: #e6e6e6;
+}
+.green-blink {
+  animation: flash 0.3s infinite;
+}
+.orange-blink {
+  animation: flash 0.3s infinite;
+}
+.red-blink {
+  animation: flash 0.3s infinite;
+}
+@keyframes flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+.mission-control-buttons {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+    border: 1px solid black;
+    padding: 10px;
+}
+.hardware-metrics {
+    margin-top: 10px;
+    border: 1px solid black;
+    padding: 5px;
+    font-size: 14px;
+}
+.flight-params {
+    margin-top: 10px;
+    border: 1px solid black;
+    padding: 5px;
+    font-size: 14px;
+}
+#weather-table {
+    border: 2px solid black;
+    font-size: 12px;
+    margin-left: 20px;
+    margin-top: 0;
+    background-color: #fefefe;
+}
+
+#weather-table th {
+    text-align: left;
+    background-color: #eee;
+    font-weight: bold;
+}
+
+#weather-table td, #weather-table th {
+    padding: 4px 8px;
+    border: 1px solid #ccc;
+}
+

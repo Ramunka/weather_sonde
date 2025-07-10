@@ -1,5 +1,5 @@
 from app import db
-from datetime import datetime
+from datetime import datetime, timezone
 from flask_login import UserMixin
 
 class User(db.Model, UserMixin):
@@ -8,7 +8,7 @@ class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
 
 
 class Device(db.Model):
@@ -17,7 +17,7 @@ class Device(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     device_sn  = db.Column(db.String, unique=True, nullable=False)
     description = db.Column(db.String)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
 
 
 class Flight(db.Model):
@@ -49,18 +49,21 @@ class Telemetry(db.Model):
     __table_args__ = {"schema": "sonde"}
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc))
     gps_latitude = db.Column(db.Float)
     gps_longitude = db.Column(db.Float)
     gps_altitude = db.Column(db.Integer)
     pressure = db.Column(db.Integer)
     temperature = db.Column(db.Float)
-    dew_point = db.Column(db.Float)
-    #battery = db.Column(db.Integer)
-    #voltage = db.Column(db.Float)
     signal_strength = db.Column(db.Integer)
     speed = db.Column(db.Float)
     ascent_rate = db.Column(db.Float)
+    humidity = db.Column(db.Float)
+    hdop = db.Column(db.Float)
+    sats = db.Column(db.Integer)
+
+    processed_ts = db.Column(db.DateTime)        # when the parser wrote the row
+    measurement_ts = db.Column(db.DateTime)      # when measurement was actually taken
 
     flight = db.relationship("Flight", backref="telemetries")
 
@@ -69,7 +72,8 @@ class Log(db.Model):
     __table_args__ = {"schema": "sonde"}
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    level = db.Column(db.String(16), default='INFO', nullable=False)
     message = db.Column(db.Text)
 
 class Alarm(db.Model):
@@ -77,7 +81,7 @@ class Alarm(db.Model):
     __table_args__ = {"schema": "sonde"}
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'))
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc))
     alarm_type = db.Column(db.String(50))
     message = db.Column(db.Text)
     resolved = db.Column(db.Boolean, default=False)
@@ -88,21 +92,35 @@ class FlightStatus(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'), unique=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    balloon_position   = db.Column(db.Float, nullable=True)  # 0–100%
+    parachute_position = db.Column(db.Float, nullable=True)  # 0–100%
+    burst_position     = db.Column(db.Float, nullable=True)  # 0–100%
+    release_altitude   = db.Column(db.Float, nullable=True)
 
-    measurement_age = db.Column(db.Integer)     # seconds since measurement_ts
-    transmission_age = db.Column(db.Integer)    # seconds since tx_ts
+    measurement_age = db.Column(db.Integer,nullable=True)     # seconds since measurement_ts
 
-    flight_phase = db.Column(db.String(20))     # "ground", "ascent", "descent", "unknown"
+    flight_phase = db.Column(db.String(20), default='pre-flight')     # "ground", "ascent", "descent", "unknown"
 
     burst_detected = db.Column(db.Boolean, default=False)
-    burst_altitude = db.Column(db.Float)
+    burst_altitude = db.Column(db.Float,nullable=True)
 
-    current_ascent_rate = db.Column(db.Float)
-    max_altitude = db.Column(db.Float)
-    min_pressure = db.Column(db.Integer)
+    last_ascent_rate = db.Column(db.Float,nullable=True)
+    max_altitude = db.Column(db.Float,nullable=True)
+    min_pressure = db.Column(db.Integer,nullable=True)
     release_ts = db.Column(db.DateTime, nullable=True)
     end_ts = db.Column(db.DateTime, nullable=True)
+    receiver_ok     = db.Column(db.Boolean, default=False)  # "Receiver" alert
+    parser_ok       = db.Column(db.Boolean, default=False)  # "Parser" alert
+    sensor_ok       = db.Column(db.Boolean, default=True)   # "Sensor" alert
+    signal_level    = db.Column(db.String(6), default=None) # "Signal": 'green','yellow','red',None
+    packet_ok       = db.Column(db.Boolean, default=True)   # "Packet" alert
+    age_warn        = db.Column(db.Boolean, default=False)  # "Age" alert
+    calibrated      = db.Column(db.Boolean, default=False)  # "Calibrated" alert
+    temp_low        = db.Column(db.Boolean, default=False)  # "Temp Low"
+    data_degrad     = db.Column(db.Boolean, default=False)  # "Meas Degrad"
+    gps_fix         = db.Column(db.Boolean, default=False)  # "GPS Fix"
+    gps_degrad      = db.Column(db.String(6), default=None) # 'yellow','red',None
 
 class GroundReference(db.Model):
     __tablename__ = "ground_reference"
@@ -110,7 +128,7 @@ class GroundReference(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'), unique=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc))
 
     # Actual values from sonde
     gps_latitude = db.Column(db.Float)
@@ -119,7 +137,6 @@ class GroundReference(db.Model):
     temperature = db.Column(db.Float)
     pressure = db.Column(db.Integer)
     humidity = db.Column(db.Float)
-    dew_point = db.Column(db.Float)
 
     # External API reference values
     api_temperature = db.Column(db.Float)
@@ -129,3 +146,14 @@ class GroundReference(db.Model):
 
     flight = db.relationship("Flight", backref="ground_reference")
 
+class SystemStatus(db.Model):
+    __tablename__  = 'system_status'
+    __table_args__ = {'schema': 'raw'}
+
+    id             = db.Column(db.Integer, primary_key=True)
+    receiver_state = db.Column(db.String, nullable=False, default='idle')
+    parser_state   = db.Column(db.String, nullable=False, default='idle')
+    updated_at     = db.Column(db.DateTime(timezone=True),
+                               server_default=db.func.now(),
+                               onupdate=db.func.now(),
+                               nullable=False)

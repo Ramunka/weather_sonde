@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import os
-import time
-from datetime import datetime
+from datetime import datetime, timezone
 import psycopg2
 import board
 import busio
 import digitalio
 import adafruit_rfm9x
+
+from app.models import FlightStatus
 
 # ── DATABASE SETUP ────────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ while True:
         payload = repr(packet)
 
     # 2) Note reception metadata
-    recv_ts = datetime.utcnow()
+    recv_ts = datetime.now(timezone.utc).replace(microsecond=0)
     rssi    = erf.rssi
 
     # 3) INSERT into raw.packets
