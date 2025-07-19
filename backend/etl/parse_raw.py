@@ -106,7 +106,7 @@ def main():
                       FROM sonde.flights f
                       JOIN sonde.devices d ON f.device_id=d.id
                      WHERE d.device_sn=%s
-                       AND f.status IN ('in-flight','pre-flight')
+                       AND f.status IN ('flight','pre-flight')
                      LIMIT 1;
                 """, (format(device_sn, 'X'),))
                 flight = cur.fetchone()

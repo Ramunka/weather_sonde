@@ -232,3 +232,36 @@ th, td {
     border: 1px solid #ccc;
 }
 
+.alt-gauge {
+  position: relative;
+  width: 40px;         /* adjust as you like */
+  height: 300px;       /* full scale height */
+  border: 1px solid #333;
+  margin: 0 1em;
+  background: #fafafa;
+}
+/* optional track styling */
+.alt-track {
+  position: absolute;
+  left: 50%;
+  top: 0; bottom: 0;
+  width: 4px;
+  margin-left: -2px;
+  background: #ddd;
+}
+/* the two markers */
+.alt-marker {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  display: none;
+  box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+.alt-marker.current {
+  background: #007bff;  /* blue */
+}
+.alt-marker.burst {
+  background: #dc3545;  /* red */
+}

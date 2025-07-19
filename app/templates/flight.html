@@ -151,132 +151,6 @@
               setElement(balloon,   s.balloon_position);
               setElement(burst,     s.burst_position);
               setElement(parachute, s.parachute_position);
-
-              // — Alert logic, one by one —
-              // Helper: clear all lit/blink classes from an element
-              function clearAll(el) {
-                ['green-lit','orange-lit','red-lit',
-                 'green-blink','orange-blink','red-blink',
-                 'green-unlit','orange-unlit','red-unlit']
-                  .forEach(c => el.classList.remove(c));
-              }
-
-              // ——— Receiver & Parser lights ———
-                ['receiver','parser'].forEach(comp => {
-                const state = s[`${comp}_state`];         // e.g. 'running' | 'idle' | 'error'
-                const el    = document.getElementById(`alert-${comp}`);
-                if (!el) return;
-
-                // clear previous classes
-                ['green-lit','green-blink','red-lit','orange-lit','orange-blink','green-unlit']
-                  .forEach(c => el.classList.remove(c));
-
-                if (state === 'running') {
-                  el.classList.add('green-lit');
-                } else if (state === 'idle') {
-                  el.classList.add('green-lit','green-blink');
-                } else {  // 'error' or anything else
-                  el.classList.add('red-lit');
-                }
-              });
-
-              // 3) Signal
-              (()=>{
-                const el = document.getElementById('alert-signal');
-                clearAll(el); el.classList.add('alert');
-                if (!s.signal_level)               el.classList.add('green-unlit');
-                else if (s.signal_level === 'green')  el.classList.add('green-lit');
-                else if (s.signal_level === 'yellow') el.classList.add('orange-lit');
-                else if (s.signal_level === 'red')    el.classList.add('red-lit');
-              })();
-
-              // 4) Packet
-              (()=>{
-                const el = document.getElementById('alert-packet');
-                clearAll(el); el.classList.add('alert');
-                if (s.receiver === 'error')       {
-                  el.classList.add('green-unlit');
-                } else if (s.packet === 'bad')    {
-                  el.classList.add('orange-lit','orange-blink');
-                } else if (s.packet === 'good')   {
-                  el.classList.add('green-lit');
-                } else /* off */                  {
-                  el.classList.add('green-unlit');
-                }
-              })();
-
-              // 5) Age
-              (()=>{
-                const el = document.getElementById('alert-age');
-                clearAll(el); el.classList.add('alert');
-                if (s.age === 'warn')             el.classList.add('orange-lit');
-                else                               el.classList.add('green-unlit');
-              })();
-
-              // 6) Calibrated
-              (()=>{
-                const el = document.getElementById('alert-calibrated');
-                clearAll(el); el.classList.add('alert');
-                if (s.calibrated)                 el.classList.add('green-lit');
-                else                               el.classList.add('green-unlit');
-              })();
-
-              // 7) Burst
-              (()=>{
-                const el = document.getElementById('alert-burst');
-                clearAll(el); el.classList.add('alert');
-                if (s.burst)                      el.classList.add('green-lit');
-                else                               el.classList.add('green-unlit');
-              })();
-
-              // 8) Sensor
-              (()=>{
-                const el = document.getElementById('alert-sensor');
-                clearAll(el); el.classList.add('alert');
-                if (s.sensor === 'ok')            el.classList.add('green-unlit');
-                else /* fault */                  el.classList.add('red-lit','red-blink');
-              })();
-
-              // 9) Temp Low
-              (()=>{
-                const el = document.getElementById('alert-temp-low');
-                clearAll(el); el.classList.add('alert');
-                if (s.temp_low)                   el.classList.add('orange-lit');
-                else                               el.classList.add('green-unlit');
-              })();
-
-              // 10) Meas Degrad
-              (()=>{
-                const el = document.getElementById('alert-data-degrad');
-                clearAll(el); el.classList.add('alert');
-                if (s.meas_degrad)                el.classList.add('red-lit');
-                else                               el.classList.add('green-unlit');
-              })();
-
-              // 11) GPS Fix
-              (()=>{
-                const el = document.getElementById('alert-gps-fix');
-                clearAll(el); el.classList.add('alert');
-                if (!s.receiver || s.receiver==='error') {
-                  el.classList.add('green-unlit');
-                } else if (s.gps_fix)             el.classList.add('green-lit');
-                else                               el.classList.add('red-lit');
-              })();
-
-              // 12) GPS Degrad
-              (()=>{
-                const el = document.getElementById('alert-gps-degrad');
-                clearAll(el); el.classList.add('alert');
-                if (!s.receiver || s.receiver==='error') {
-                  el.classList.add('green-unlit');
-                } else if (!s.gps_degrad)          {
-                  el.classList.add('green-unlit');
-                } else if (s.gps_degrad === 'yellow') {
-                  el.classList.add('orange-lit');
-                } else /* 'red' */                   {
-                  el.classList.add('red-lit');
-                }
-              })();
             })
             .catch(console.error);
         }
@@ -326,7 +200,7 @@
 
 
     </script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" /><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" /><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
 </head>
 <body>
@@ -400,14 +274,14 @@
 
 
         </div>
-        
+
         <div class="hardware-metrics">
             <strong>Hardware Metrics</strong>
             <table>
                 <tr><th>Signal Strength</th><td id="signal-strength">{{ telemetry.signal_strength or "N/A" }}</td></tr>
             </table>
         </div>
-        
+
         <div class="flight-params">
             <strong>Flight Parameters</strong>
             <table class="table table-striped table-bordered">

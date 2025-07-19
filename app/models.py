@@ -8,7 +8,7 @@ class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Device(db.Model):
@@ -17,7 +17,7 @@ class Device(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     device_sn  = db.Column(db.String, unique=True, nullable=False)
     description = db.Column(db.String)
-    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Flight(db.Model):
@@ -28,15 +28,14 @@ class Flight(db.Model):
     user_id        = db.Column(db.Integer, db.ForeignKey('sonde.users.id'))
     mission_number = db.Column(db.String(50), unique=True, nullable=False)
     equipment      = db.Column(db.String(100))
-    start_time     = db.Column(db.DateTime)
-    end_time       = db.Column(db.DateTime)
+    start_time     = db.Column(db.DateTime(timezone=True))
+    end_time       = db.Column(db.DateTime(timezone=True))
     status         = db.Column(db.String(20), default='pre-flight')
     comments       = db.Column(db.Text)
 
-    # NEW COLUMNS:
     device_id        = db.Column(db.Integer, db.ForeignKey('sonde.devices.id'))
     mask             = db.Column(db.String, nullable=False, default='')
-    start_latitude   = db.Column(db.Float)    # optional, if you added these
+    start_latitude   = db.Column(db.Float)
     start_longitude  = db.Column(db.Float)
     elevation        = db.Column(db.Integer)
 
@@ -49,7 +48,7 @@ class Telemetry(db.Model):
     __table_args__ = {"schema": "sonde"}
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'))
-    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    timestamp = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     gps_latitude = db.Column(db.Float)
     gps_longitude = db.Column(db.Float)
     gps_altitude = db.Column(db.Integer)
@@ -62,8 +61,8 @@ class Telemetry(db.Model):
     hdop = db.Column(db.Float)
     sats = db.Column(db.Integer)
 
-    processed_ts = db.Column(db.DateTime)        # when the parser wrote the row
-    measurement_ts = db.Column(db.DateTime)      # when measurement was actually taken
+    processed_ts = db.Column(db.DateTime(timezone=True))        # when the parser wrote the row
+    measurement_ts = db.Column(db.DateTime(timezone=True))      # when measurement was actually taken
 
     flight = db.relationship("Flight", backref="telemetries")
 
@@ -72,7 +71,10 @@ class Log(db.Model):
     __table_args__ = {"schema": "sonde"}
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'))
-    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    timestamp = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )
     level = db.Column(db.String(16), default='INFO', nullable=False)
     message = db.Column(db.Text)
 
@@ -81,7 +83,10 @@ class Alarm(db.Model):
     __table_args__ = {"schema": "sonde"}
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'))
-    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    timestamp = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )
     alarm_type = db.Column(db.String(50))
     message = db.Column(db.Text)
     resolved = db.Column(db.Boolean, default=False)
@@ -92,7 +97,7 @@ class FlightStatus(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'), unique=True)
-    updated_at = db.Column(db.DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     balloon_position   = db.Column(db.Float, nullable=True)  # 0–100%
     parachute_position = db.Column(db.Float, nullable=True)  # 0–100%
     burst_position     = db.Column(db.Float, nullable=True)  # 0–100%
@@ -128,7 +133,7 @@ class GroundReference(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'), unique=True)
-    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    timestamp = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Actual values from sonde
     gps_latitude = db.Column(db.Float)

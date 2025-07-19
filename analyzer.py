@@ -68,15 +68,19 @@ def monitor():
                 # latest telemetry
                 tel = (session.query(Telemetry)
                          .filter_by(flight_id=fid)
-                         .order_by(Telemetry.timestamp.desc())
+                         .order_by(Telemetry.measurement_ts.desc())
                          .first())
                 if not tel:
                     continue
 
                 now = datetime.now(timezone.utc)
                 # measurement age (seconds)
-                if tel.timestamp:
-                    age_f = (now - tel.timestamp).total_seconds()
+                if tel.measurement_ts:
+                    # ensure it’s tz-aware
+                    mts = tel.measurement_ts
+                    if mts.tzinfo is None:
+                        mts = mts.replace(tzinfo=timezone.utc)
+                    age_f = (now - mts).total_seconds()
                     meas_age = 0 if age_f < 1 else int(age_f)
                 else:
                     meas_age = None

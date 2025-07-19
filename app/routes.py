@@ -304,29 +304,40 @@ def telemetry(flight_id):
 @bp.route('/api/gps/<int:flight_id>')
 @login_required
 def gps_data(flight_id):
-    # 1) fetch only post-cal points
+    # 1) Fetch only post-calibration points
     gr = GroundReference.query.filter_by(flight_id=flight_id).first()
     if not gr:
         return jsonify([])
 
     cutoff = gr.timestamp
-    recs = Telemetry.query \
-        .filter(Telemetry.flight_id == flight_id,
-                Telemetry.timestamp >= cutoff) \
-        .order_by(Telemetry.timestamp.asc()) \
-        .all()
 
-    # find burst timestamp if any
+    # Optional 'after' timestamp filtering
+    after = request.args.get("after")
+    query = Telemetry.query.filter(
+        Telemetry.flight_id == flight_id,
+        Telemetry.timestamp >= cutoff
+    )
+    if after:
+        try:
+            after_dt = datetime.fromisoformat(after)
+            query = query.filter(Telemetry.timestamp > after_dt)
+        except ValueError:
+            pass  # ignore malformed input
+
+    recs = query.order_by(Telemetry.timestamp.asc()).all()
+
+    # 2) Find burst timestamp if any
     status = FlightStatus.query.filter_by(flight_id=flight_id).first()
     burst_ts = status.release_ts if status and status.burst_detected is False else status.burst_ts
 
+    # 3) Filter and annotate points
     out = []
     n = len(recs)
     for idx, r in enumerate(recs):
         if r.gps_latitude is None or r.gps_longitude is None:
             continue
 
-        # decide whether to include this point
+        # Decide whether to keep this point
         keep = (
             idx == 0 or
             idx == n - 1 or
@@ -336,18 +347,22 @@ def gps_data(flight_id):
         if not keep:
             continue
 
+        icon = None
+        if idx == 0:
+            icon = "start"
+        elif burst_ts and r.timestamp == burst_ts:
+            icon = "burst"
+        elif idx == n - 1:
+            icon = "end"
+
         out.append({
-            "coords":    [r.gps_latitude, r.gps_longitude],
-            "altitude":  r.gps_altitude,
-            "timestamp": r.timestamp.strftime("%H:%M:%S UTC"),
-            "icon":      idx == 0
-                          and "start"
-                          or (burst_ts and r.timestamp == burst_ts)
-                            and "burst"
-                          or idx == n-1
-                            and "end"
-                          or None
+            "coords": [r.gps_latitude, r.gps_longitude],
+            "altitude": r.gps_altitude,
+            "timestamp": r.timestamp.isoformat(),             # for frontend logic
+            "timestamp_str": r.timestamp.strftime("%H:%M:%S UTC"),  # for display
+            "icon": icon
         })
+
     return jsonify(out)
 
 @bp.route('/api/status/<int:flight_id>')
@@ -396,12 +411,9 @@ def calibrate_ground(flight_id):
 
     # Delete the existing ground reference if present
     if flight.ground_reference:
-        db.session.delete(flight.ground_reference)
+        for ref in flight.ground_reference:
+            db.session.delete(ref)
         db.session.commit()
-
-    # Optional wait to stabilize readings
-    import time
-    time.sleep(3)
 
     telemetry = Telemetry.query.filter_by(flight_id=flight_id).order_by(Telemetry.timestamp.desc()).first()
     if not telemetry:
@@ -415,7 +427,7 @@ def calibrate_ground(flight_id):
         temperature=telemetry.temperature,
         pressure=telemetry.pressure,
         humidity=telemetry.humidity,
-        timestamp=telemetry.timestamp  # Optional, if your table supports it
+        timestamp=telemetry.timestamp
     )
     db.session.add(ref)
 
@@ -431,6 +443,7 @@ def calibrate_ground(flight_id):
 
     return jsonify({"message": "Ground reference calibrated."})
 
+
 @bp.route('/flight/<int:flight_id>/release', methods=['POST'])
 @login_required
 def release_flight(flight_id):
@@ -439,26 +452,35 @@ def release_flight(flight_id):
     if flight.status != 'pre-flight':
         return jsonify({"error": "Flight must be in 'pre-flight' state to release."}), 400
 
-    # Update status
+    now = datetime.now(timezone.utc)
+
+    # 1) flip the flight status
     flight.status = 'flight'
 
-    # Record release timestamp
+    # 2) record release_ts (create FlightStatus if needed)
     status = FlightStatus.query.filter_by(flight_id=flight_id).first()
-    if status:
-        status.release_ts = datetime.now(timezone.utc)
-        db.session.commit()
+    if not status:
+        status = FlightStatus(flight_id=flight_id)
+        db.session.add(status)
+    status.release_ts = now
 
-    # Log it
+    # 3) log it
     log = Log(
         flight_id=flight_id,
         level='INFO',
-        message=f"Balloon released."
+        message="Balloon released."
     )
-
     db.session.add(log)
+
+    # 4) commit all at once
     db.session.commit()
 
-    return jsonify({"message": "Flight released.", "release_ts": now.isoformat(), "new_status": "flight"})
+    # 5) return only primitives
+    return jsonify({
+        "message":    "Flight released.",
+        "release_ts": now.isoformat(),
+        "new_status": flight.status
+    })
 
 @bp.route('/flight/<int:flight_id>/end', methods=['POST'])
 @login_required
@@ -468,25 +490,33 @@ def end_flight(flight_id):
     if flight.status not in ['pre-flight', 'flight']:
         return jsonify({"error": f"Cannot end flight from status '{flight.status}'."}), 400
 
+    now = datetime.now(timezone.utc)
+
+    # 1) update flight.status
     flight.status = 'post-flight'
 
-    # Record end timestamp
+    # 2) record end_ts (create FlightStatus if needed)
     status = FlightStatus.query.filter_by(flight_id=flight_id).first()
-    if status:
-        status.end_ts = datetime.now(timezone.utc)
+    if not status:
+        status = FlightStatus(flight_id=flight_id)
+        db.session.add(status)
+    status.end_ts = now
 
+    # 3) log it
     log = Log(
-        flight_id=flight.id,
+        flight_id=flight_id,
         level='INFO',
-        message=f"Flight manually ended from status '{flight.status}'."
+        message=f"Flight manually ended."
     )
-
     db.session.add(log)
+
+    # 4) commit
     db.session.commit()
 
     return jsonify({
-        "message": "Flight marked as ended.",
-        "new_status": "post-flight"
+        "message":    "Flight marked as ended.",
+        "end_ts":     now.isoformat(),
+        "new_status": flight.status
     })
 
 @bp.route('/api/logs/<int:flight_id>')
