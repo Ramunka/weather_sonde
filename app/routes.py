@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session, current_app
 from flask_login import login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from .models import User, Flight, Telemetry, Log, Alarm, Device, GroundReference, FlightStatus
+from .models import User, Flight, Telemetry, Log, Alarm, Device, GroundReference, FlightStatus, DataSelection
 from datetime import datetime, timezone
 from .extensions import db
 from flask import flash
@@ -184,7 +184,10 @@ def logout():
 @bp.route('/dashboard')
 @login_required
 def dashboard():
-    flights = Flight.query.order_by(Flight.start_time.desc()).all()
+    flights = Flight.query \
+        .filter(Flight.status.in_(['pre-flight', 'flight'])) \
+        .order_by(Flight.start_time.desc()) \
+        .all()
     return render_template("dashboard.html", flights=flights)
 
 @bp.route('/flight/<int:flight_id>')
@@ -457,7 +460,7 @@ def release_flight(flight_id):
     # 1) flip the flight status
     flight.status = 'flight'
 
-    # 2) record release_ts (create FlightStatus if needed)
+    # 2) record release_ts (create FlightStatus if needed) (ACTUAL TIME, DIFFERS FROM FLIGHT.'s)
     status = FlightStatus.query.filter_by(flight_id=flight_id).first()
     if not status:
         status = FlightStatus(flight_id=flight_id)
@@ -494,6 +497,7 @@ def end_flight(flight_id):
 
     # 1) update flight.status
     flight.status = 'post-flight'
+    flight.end_time = now
 
     # 2) record end_ts (create FlightStatus if needed)
     status = FlightStatus.query.filter_by(flight_id=flight_id).first()
@@ -532,3 +536,80 @@ def get_logs(flight_id):
             } for log in logs
         ]
     })
+
+@bp.route('/init_device', methods=['GET', 'POST'])
+@login_required
+def init_device():
+    if request.method == 'POST':
+        device_sn = request.form.get('device_sn', '').strip()
+        description = request.form.get('description', '').strip()
+
+        if not device_sn:
+            flash("Device Serial Number is required.", "danger")
+            return render_template("init_device.html")
+
+        # Check if SN already exists
+        if Device.query.filter_by(device_sn=device_sn).first():
+            flash("Device with this serial number already exists.", "danger")
+            return render_template("init_device.html")
+
+        # Register device
+        try:
+            new_device = Device(device_sn=device_sn, description=description)
+            db.session.add(new_device)
+            db.session.commit()
+            flash("Device registered successfully.", "success")
+            return redirect(url_for('main.dashboard'))
+        except Exception as e:
+            db.session.rollback()
+            flash("Error registering device.", "danger")
+
+    return render_template("init_device.html")
+
+@bp.route('/archive')
+@login_required
+def archive():
+    flights = Flight.query\
+        .filter_by(status='post-flight')\
+        .order_by(Flight.end_time.desc())\
+        .all()
+    return render_template("archive.html", flights=flights)
+
+
+from backend.archive.audit_telemetry import audit_flight_telemetry
+
+@bp.route('/flight/<int:flight_id>/verify')
+@login_required
+def verify_flight_data(flight_id):
+    audit = audit_flight_telemetry(flight_id)
+    if "error" in audit:
+        flash(audit["error"], "danger")
+        return redirect(url_for("main.dashboard"))
+
+    return render_template("verify_data.html", audit=audit, flight_id=flight_id)
+
+@bp.route('/flight/<int:flight_id>/confirm_data_selection', methods=['POST'])
+@login_required
+def confirm_data_selection(flight_id):
+    # extract form fields
+    start_ts = request.form.get("start_ts")
+    end_ts = request.form.get("end_ts")
+    exclusions = request.form.getlist("exclude_outlier")  # list like ['2025-08-06T13:11:22::humidity', ...]
+
+    # parse and save to DataSelection model
+    try:
+        selection = DataSelection(
+            flight_id=flight_id,
+            start_ts=datetime.fromisoformat(start_ts),
+            end_ts=datetime.fromisoformat(end_ts),
+            exclusions=[{"key": x} for x in exclusions],
+            verified_by=current_user.username
+        )
+        db.session.add(selection)
+        db.session.commit()
+        flash("Data selection saved.", "success")
+        return redirect(url_for("main.dashboard"))
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Failed to save selection: {str(e)}", "danger")
+        return redirect(url_for("main.verify_flight_data", flight_id=flight_id))

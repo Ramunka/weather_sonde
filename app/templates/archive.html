@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Flight Archive{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="text-muted">Archived Flights</h2>
+    <div>
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary me-2">Back to Active Flights</a>
+      <a href="{{ url_for('main.logout') }}" class="btn btn-outline-danger">Logout</a>
+    </div>
+  </div>
+
+  {% if flights %}
+    <ul class="list-group">
+      {% for flight in flights %}
+        <li class="list-group-item d-flex justify-content-between align-items-center bg-light">
+          <div>
+            <strong>{{ flight.mission_number }}</strong><br>
+            <small>Ended: {{ flight.end_time.strftime('%Y-%m-%d %H:%M:%S') if flight.end_time else 'Unknown' }}</small>
+          </div>
+          <a href="{{ url_for('main.flight_dashboard', flight_id=flight.id) }}" class="btn btn-sm btn-outline-dark">View Report</a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted">No archived flights found.</p>
+  {% endif %}
+</div>
+{% endblock %}

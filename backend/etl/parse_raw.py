@@ -100,24 +100,25 @@ def main():
                     print(f"  Invalid SN/token in: {line!r}")
                     continue
 
-                # Active flight lookup
                 cur.execute("""
-                    SELECT f.id, f.mask
-                      FROM sonde.flights f
-                      JOIN sonde.devices d ON f.device_id=d.id
-                     WHERE d.device_sn=%s
-                       AND f.status IN ('flight','pre-flight')
-                     LIMIT 1;
-                """, (format(device_sn, 'X'),))
-                flight = cur.fetchone()
-                if not flight:
-                    print(f"  No active flight for 0x{device_sn:X}")
-                    continue
+                            SELECT f.id, f.mask
+                            FROM sonde.flights f
+                                     JOIN sonde.devices d ON f.device_id = d.id
+                            WHERE d.device_sn = %s
+                              AND f.status IN ('flight', 'pre-flight');
+                            """, (format(device_sn, 'X'),))
+                flights = cur.fetchall()
 
-                flight_id, mask = flight
-                expected = generate_token(device_sn, mask)
-                if token_recv != expected:
-                    print(f"  Token mismatch: got 0x{token_recv:X}, exp 0x{expected:X}")
+                matched_flight = None
+                for flight_id, mask in flights:
+                    expected = generate_token(device_sn, mask)
+                    if token_recv == expected:
+                        matched_flight = flight_id
+                        break
+
+                if not matched_flight:
+                    print(
+                        f"  No matching token for 0x{device_sn:X}: got 0x{token_recv:X}, checked {len(flights)} flight(s)")
                     continue
 
                 utc_str = cols[2]

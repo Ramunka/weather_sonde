@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Initialize New Device{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <h2 class="mb-4">Register New Device</h2>
+  <form method="POST" action="{{ url_for('main.init_device') }}">
+    <div class="mb-3">
+      <label for="device_sn" class="form-label">Device Serial Number</label>
+      <input type="text" class="form-control" id="device_sn" name="device_sn" required>
+    </div>
+
+    <div class="mb-3">
+      <label for="description" class="form-label">Description</label>
+      <input type="text" class="form-control" id="description" name="description">
+    </div>
+
+    <button type="submit" class="btn btn-success">Register Device</button>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+  </form>
+</div>
+{% endblock %}

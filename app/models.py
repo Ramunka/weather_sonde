@@ -162,3 +162,18 @@ class SystemStatus(db.Model):
                                server_default=db.func.now(),
                                onupdate=db.func.now(),
                                nullable=False)
+
+class DataSelection(db.Model):
+    __tablename__ = 'data_selection'
+    __table_args__ = {'schema': 'sonde'}
+
+    id = db.Column(db.Integer, primary_key=True)
+    flight_id = db.Column(db.Integer, db.ForeignKey('sonde.flights.id'), unique=True)
+
+    start_ts = db.Column(db.DateTime(timezone=True), nullable=False)  # inclusive
+    end_ts = db.Column(db.DateTime(timezone=True), nullable=False)  # inclusive or exclusive
+
+    exclusions = db.Column(db.JSON)  # optional list of outlier rows or timestamps
+    gap_info = db.Column(db.JSON)  # optional list of gaps
+    verified_by = db.Column(db.String)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

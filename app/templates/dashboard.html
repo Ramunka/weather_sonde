@@ -6,11 +6,15 @@
 <div class="container mt-5">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Welcome, {{ current_user.username }}</h2>
-    <a href="{{ url_for('main.logout') }}" class="btn btn-outline-secondary">Logout</a>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('main.archive') }}" class="btn btn-outline-dark">Archive</a>
+      <a href="{{ url_for('main.logout') }}" class="btn btn-outline-danger">Logout</a>
+    </div>
   </div>
 
-  <div class="mb-4">
+  <div class="mb-4 d-flex gap-2">
     <a href="{{ url_for('main.init_flight') }}" class="btn btn-primary">+ Initialize New Flight</a>
+    <a href="{{ url_for('main.init_device') }}" class="btn btn-outline-primary">+ Register New Device</a>
   </div>
 
   <h4>Your Flights</h4>
@@ -19,11 +23,14 @@
       {% for flight in flights %}
         <li class="list-group-item d-flex justify-content-between align-items-center">
           <div>
-            <strong>{{ flight.flight_name }}</strong><br>
-            <div>
-               <strong>{{ flight.mission_number }}</strong><br>
-               <small>Launched: {{ flight.start_time.strftime('%Y-%m-%d %H:%M:%S') }}</small>
-            </div>
+            <strong>{{ flight.mission_number }}</strong><br>
+            <span style="font-family: courier, monospace; font-style: italic; color:
+              {% if flight.status == 'pre-flight' %}blue
+              {% elif flight.status == 'flight' %}green
+              {% else %}gray{% endif %};">
+              {{ flight.status }}
+            </span><br>
+            <small>Launched: {{ flight.start_time.strftime('%Y-%m-%d %H:%M') }}</small>
           </div>
           <a href="{{ url_for('main.flight_dashboard', flight_id=flight.id) }}" class="btn btn-sm btn-outline-primary">View</a>
         </li>

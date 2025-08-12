@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Verify Telemetry Data{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <h2 class="mb-4">Verify Flight Telemetry</h2>
+
+  <form method="POST" action="{{ url_for('main.confirm_data_selection', flight_id=flight_id) }}">
+    <div class="mb-4">
+      <h5>Dataset Summary</h5>
+      <ul>
+        <li><strong>Total Points:</strong> {{ audit.total_points }}</li>
+        <li><strong>Start Timestamp:</strong> {{ audit.start_ts }}</li>
+        <li><strong>End Timestamp:</strong> {{ audit.end_ts }}</li>
+      </ul>
+    </div>
+
+    <div class="mb-4">
+      <h5>Detected Time Gaps</h5>
+      {% if audit.gaps %}
+        <ul class="list-group">
+          {% for gap in audit.gaps %}
+            <li class="list-group-item">
+              <strong>{{ gap.start }}</strong> → <strong>{{ gap.end }}</strong> ({{ gap.duration }} s)
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted">No significant time gaps detected.</p>
+      {% endif %}
+    </div>
+
+    <div class="mb-4">
+      <h5>Detected Outliers</h5>
+      {% if audit.outliers %}
+        <ul class="list-group">
+          {% for o in audit.outliers %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              <div>
+                <strong>{{ o.timestamp }}</strong>: {{ o.field }} = {{ o.value }}<br>
+                <small class="text-muted">Reason: {{ o.reason }}</small>
+              </div>
+              <div>
+                <input type="checkbox" name="exclude_outlier" value="{{ o.timestamp }}::{{ o.field }}" checked>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted">No outliers detected.</p>
+      {% endif %}
+    </div>
+
+    <button type="submit" class="btn btn-success">Confirm and Clean Data</button>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+  </form>
+</div>
+{% endblock %}
