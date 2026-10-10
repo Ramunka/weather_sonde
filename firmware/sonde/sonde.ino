@@ -1,3 +1,13 @@
+// Weather sonde flight firmware.
+//
+// Every INTERVAL ms: read SHTC3 (humidity), TMP117 (temperature), LPS22 (pressure) and the
+// GPS, append one CSV record, and transmit BATCH records per LoRa packet at 915 MHz:
+//
+//   SN,TOKEN,UTC,TEMP,HUM,PRES,LAT,LNG,ALT,HDOP,SATS\n
+//
+// SN and TOKEN are read from EEPROM. Write them with firmware/provision_eeprom first.
+// See backend/protocol.py for the ground-side parser.
+
 #include <Wire.h>
 #include <SPI.h>
 #include <EEPROM.h>
@@ -17,8 +27,10 @@
 static const uint8_t  BATCH    = 2;   // send two measurements per packet
 static const uint32_t INTERVAL = 2000;
 
-// Shrunk buffer: 64 bytes per record × BATCH
-char    batchBuf[BATCH * 90];
+// Worst-case record is ~94 bytes (5-digit altitude, negative longitude, 2-digit sats),
+// so reserve 110 per record. BATCH * RECORD_MAX must stay below the 251-byte LoRa limit.
+static const uint8_t RECORD_MAX = 110;
+char    batchBuf[BATCH * RECORD_MAX];
 uint8_t batchPos = 0, batchIdx = 0;
 char    utcBuf[21];
 
@@ -41,7 +53,7 @@ static sensors_event_t tempEvent;
 void loadDeviceInfo() {
   uint32_t magic = 0;
   EEPROM.get(ADDR_MAGIC, magic);
-  if (magic != MAGIC_VALUE) while (1);
+  if (magic != MAGIC_VALUE) while (1);  // not provisioned: flash provision_eeprom first
   EEPROM.get(ADDR_MAGIC + 4, DEVICE_SN);
   EEPROM.get(ADDR_MAGIC + 8, DEVICE_TOKEN);
 }
@@ -66,7 +78,7 @@ void setup() {
   pinMode(LPS_CS_PIN, OUTPUT);
   digitalWrite(LPS_CS_PIN, HIGH);
 
-  // Sensor initialization
+  // Sensor initialization (halts if a sensor is missing)
   if (!shtc3.begin())   while (1);
   if (!tmp117.begin())  while (1);
   if (!lps.begin_SPI(LPS_CS_PIN, &SPI)) while (1);
@@ -124,7 +136,7 @@ void loop() {
   batchPos += sprintf(batchBuf + batchPos,
     "%d\n", gps.satellites.isValid() ? gps.satellites.value() : 0);
 
-  // Send when full
+  // Send when full (the radio sleeps between packets to save power)
   if (++batchIdx >= BATCH) {
     rf95.init(); delay(10);
     rf95.setFrequency(915.0);

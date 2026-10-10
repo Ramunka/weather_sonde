@@ -1,17 +1,25 @@
+// Writes the device serial number and the per-flight token to EEPROM.
+//
+// Re-flash before EVERY flight: the ground station generates a new random mask when a
+// flight is created and only accepts packets whose token = (SN XOR mask) & 0xFFFFFF.
+//   1. Create the flight in the web UI and copy its mask.
+//   2. Set NEW_SN and KEY_MASK below, upload, check the serial monitor (57600 baud).
+//   3. Upload firmware/sonde again.
+
 #include <EEPROM.h>
 
 // ── EEPROM Layout ───────────────────────────────────────────────────────────
 // 0–3   : magic (0x55AA1234)
 // 4–7   : uint32_t DEVICE_SN
-// 8–9   : uint32_t DEVICE_TOKEN
+// 8–11  : uint32_t DEVICE_TOKEN
 constexpr int   ADDR_MAGIC        = 0;
 constexpr int   ADDR_DEVICE_SN    = 4;
 constexpr int   ADDR_DEVICE_TOKEN = 8;
 constexpr uint32_t MAGIC_VALUE    = 0x55AA1234UL;
 
 // ←– EDIT THESE VALUES ––>
-const uint32_t NEW_SN    = 0x11951;   // device serial number
-const uint32_t KEY_MASK  = 0x5B5A5B;    // mask value
+const uint32_t NEW_SN    = 0x11951;    // device serial number (as registered in the web UI)
+const uint32_t KEY_MASK  = 0x5B5A5B;   // flight mask shown on the flight page
 
 void setup() {
   Serial.begin(57600);
