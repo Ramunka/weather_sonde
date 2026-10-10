@@ -1,207 +1,145 @@
 #!/usr/bin/env python3
 """
-ETL parser for raw.packets → sonde.telemetry (updated schema)
+ETL parser: raw.packets → sonde.telemetry
 
-Reads unprocessed rows from raw.packets, parses each CSV line,
-validates against active flights, computes dew point and measurement_ts
-from the on-device UTC field, and then inserts into sonde.telemetry with:
-  - timestamp           (when packet was received)
-  - processed_ts        (when parser wrote the row)
-  - measurement_ts      (UTC from device)
-  - gps_latitude, gps_longitude, gps_altitude
-  - pressure, temperature, dew_point, humidity
-  - signal_strength
-  - speed (NULL), ascent_rate (NULL)
-  - tx_ts (NULL), device_sn
-Finally marks raw.packets.processed = TRUE.
+Waits for NOTIFY on 'packet_inserted' (and polls every 5 s as a fallback), reads
+unprocessed rows from raw.packets, parses each CSV record (see backend/protocol.py),
+authenticates it against active flights via the SN/mask token, derives ascent rate
+and ground speed, and inserts one sonde.telemetry row per record.
+
+Each packet is handled in its own transaction. A packet that fails to insert is
+rolled back, logged and still marked processed, so one bad packet can't stall the queue.
 """
-import os
-import math
-import psycopg2
-from datetime import datetime, timezone
 import select
+import sys
+import time
+from datetime import timezone
 
-# Constants
-gps_noise_threshold = 0.5
-speed_noise_threshold = 0.5
-DSN = os.getenv(
-    "DATABASE_URL",
-    "dbname=weather_sonde user=ingest_user password=strong_ingest_password host=localhost"
-)
+import psycopg2
 
-# State
-_sample_history_by_device = {}
+from config import INGEST_DATABASE_URL, PG_OPTIONS, psycopg2_dsn
+from backend.protocol import RateEstimator, generate_token, parse_record
 
-# Helpers
-def parse_float(val):
-    try:
-        if val.strip().upper() == 'NAN':
-            return None
-        return float(val)
-    except:
-        return None
+POLL_SECONDS = 5
+BATCH_SIZE = 100
+
+# Rate history per (device, flight) so a new flight starts with a clean window.
+_estimators = {}
 
 
-def generate_token(device_sn: int, mask: str) -> int:
-    try:
-        key = int(mask, 16)
-    except ValueError:
-        key = 0
-    return (device_sn ^ key) & 0xFFFFFF
+def find_flight(cur, record):
+    """Return the id of the active flight whose mask produces this record's token."""
+    cur.execute("""
+        SELECT f.id, f.mask
+          FROM sonde.flights f
+          JOIN sonde.devices d ON f.device_id = d.id
+         WHERE d.device_sn = %s
+           AND f.status IN ('pre-flight', 'flight')
+    """, (format(record.device_sn, "X"),))
+    candidates = cur.fetchall()
+    for flight_id, mask in candidates:
+        if generate_token(record.device_sn, mask) == record.token:
+            return flight_id
+    print(f"  No matching flight for SN 0x{record.device_sn:X} token 0x{record.token:06X} "
+          f"({len(candidates)} active flight(s) checked)")
+    return None
 
-def haversine_meters(lat1, lon1, lat2, lon2):
-    R = 6371000.0
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlmb = math.radians(lon2 - lon1)
-    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlmb/2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-def main():
-    conn = psycopg2.connect(DSN)
-    conn.set_session(autocommit=True)
-    cur = conn.cursor()
-    cur.execute("LISTEN packet_inserted;")
-    print("Listening for new packets on channel 'packet_inserted'...")
+def insert_record(cur, flight_id, record, recv_ts, rssi):
+    estimator = _estimators.setdefault((record.device_sn, flight_id), RateEstimator())
+    ascent_rate, ground_speed = estimator.add(
+        record.measurement_ts, record.altitude, record.latitude, record.longitude)
 
-    while True:
-        if select.select([conn], [], [], 5) == ([], [], []):
-            print("[idle] No new packets in last 5 seconds.")
-        else:
-            conn.poll()
-            for notify in conn.notifies:
-                print(f"[notify] {notify.channel}: {notify.payload}")
-            conn.notifies.clear()
+    cur.execute("""
+        INSERT INTO sonde.telemetry (
+            flight_id, timestamp, measurement_ts, processed_ts,
+            gps_latitude, gps_longitude, gps_altitude, hdop, sats,
+            pressure, temperature, humidity,
+            signal_strength, speed, ascent_rate
+        ) VALUES (%s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (
+        flight_id, recv_ts, record.measurement_ts,
+        record.latitude, record.longitude,
+        round(record.altitude) if record.altitude is not None else None,
+        record.hdop, record.sats,
+        round(record.pressure) if record.pressure is not None else None,
+        record.temperature, record.humidity,
+        round(rssi) if rssi is not None else None,
+        ground_speed, ascent_rate,
+    ))
 
-        cur.execute("""
-            SELECT id, recv_ts, payload, rssi_dbm
-              FROM raw.packets
-             WHERE NOT processed
-             ORDER BY id
-             LIMIT 100;
-        """)
-        rows = cur.fetchall()
-        if not rows:
+
+def process_packet(cur, recv_ts, payload, rssi):
+    inserted = 0
+    for line in payload.strip().splitlines():
+        try:
+            record = parse_record(line)
+        except ValueError as exc:
+            print(f"  Skipping malformed record {line!r}: {exc}")
             continue
+        flight_id = find_flight(cur, record)
+        if flight_id is not None:
+            insert_record(cur, flight_id, record, recv_ts, rssi)
+            inserted += 1
+    return inserted
+
+
+def drain(conn):
+    """Process every unprocessed packet; returns the number handled."""
+    handled = 0
+    while True:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, recv_ts, payload, rssi_dbm
+                  FROM raw.packets
+                 WHERE NOT processed
+                 ORDER BY id
+                 LIMIT %s
+            """, (BATCH_SIZE,))
+            rows = cur.fetchall()
+        conn.commit()
+        if not rows:
+            return handled
 
         for raw_id, recv_ts, payload, rssi in rows:
-            print(f"Processing raw.id={raw_id}")
-            for line in payload.strip().splitlines():
-                cols = line.split(',')
-                if len(cols) < 11:
-                    print(f"  Skipping malformed: {line!r}")
-                    continue
+            if recv_ts is not None and recv_ts.tzinfo is None:
+                recv_ts = recv_ts.replace(tzinfo=timezone.utc)
+            try:
+                with conn.cursor() as cur:
+                    n = process_packet(cur, recv_ts, payload, rssi)
+                    cur.execute("UPDATE raw.packets SET processed = TRUE WHERE id = %s", (raw_id,))
+                conn.commit()
+                print(f"raw.id={raw_id}: {n} record(s) stored")
+            except psycopg2.Error as exc:
+                conn.rollback()
+                print(f"raw.id={raw_id}: failed ({exc.pgerror or exc}); marking processed and skipping",
+                      file=sys.stderr)
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE raw.packets SET processed = TRUE WHERE id = %s", (raw_id,))
+                conn.commit()
+            handled += 1
 
-                # Parse header
-                try:
-                    device_sn  = int(cols[0], 16)
-                    token_recv = int(cols[1], 16)
-                except ValueError:
-                    print(f"  Invalid SN/token in: {line!r}")
-                    continue
 
-                cur.execute("""
-                            SELECT f.id, f.mask
-                            FROM sonde.flights f
-                                     JOIN sonde.devices d ON f.device_id = d.id
-                            WHERE d.device_sn = %s
-                              AND f.status IN ('flight', 'pre-flight');
-                            """, (format(device_sn, 'X'),))
-                flights = cur.fetchall()
+def main():
+    conn = psycopg2.connect(psycopg2_dsn(INGEST_DATABASE_URL), options=PG_OPTIONS)
+    listener = psycopg2.connect(psycopg2_dsn(INGEST_DATABASE_URL), options=PG_OPTIONS)
+    listener.autocommit = True
+    with listener.cursor() as cur:
+        cur.execute("LISTEN packet_inserted;")
+    print("Parser listening on channel 'packet_inserted'")
 
-                matched_flight = None
-                for flight_id, mask in flights:
-                    expected = generate_token(device_sn, mask)
-                    if token_recv == expected:
-                        matched_flight = flight_id
-                        break
+    idle_since = time.monotonic()
+    while True:
+        if drain(conn):
+            idle_since = time.monotonic()
+        elif time.monotonic() - idle_since >= 60:
+            print("[idle] no new packets in the last 60 s")
+            idle_since = time.monotonic()
 
-                if not matched_flight:
-                    print(
-                        f"  No matching token for 0x{device_sn:X}: got 0x{token_recv:X}, checked {len(flights)} flight(s)")
-                    continue
+        if select.select([listener], [], [], POLL_SECONDS) != ([], [], []):
+            listener.poll()
+            listener.notifies.clear()
 
-                utc_str = cols[2]
-                try:
-                    # e.g. '2025-06-18T19:05:09Z'
-                    measurement_ts = datetime.strptime(utc_str, "%Y-%m-%dT%H:%M:%SZ")
-                    measurement_ts = measurement_ts.replace(tzinfo=timezone.utc)
-                except Exception:
-                    measurement_ts = None
 
-                # Parse sensor fields
-                temp_c   = parse_float(cols[3])
-                humidity = parse_float(cols[4])
-                pres     = parse_float(cols[5])
-                lat      = parse_float(cols[6])
-                lng      = parse_float(cols[7])
-                alt_m    = parse_float(cols[8])
-                hdop     = parse_float(cols[9])
-                sats     = parse_float(cols[10])
-
-                # Speed & ascent (unchanged)
-                history = _sample_history_by_device.setdefault(device_sn, [])
-                if alt_m is not None and lat is not None and lng is not None:
-                    history.append((measurement_ts, alt_m, lat, lng))
-                    if len(history)>4: history.pop(0)
-                ascent_rate = None
-                if len(history)>=2:
-                    rates = []
-                    for i in range(len(history)-1):
-                        t1, a1, _, _ = history[i]
-                        t2, a2, _, _ = history[i+1]
-                        if t1 and t2 and a1 is not None and a2 is not None:
-                            dt = (t2 - t1).total_seconds()
-                            if dt>0: rates.append((a2-a1)/dt)
-                    if rates:
-                        avg = sum(rates)/len(rates)
-                        ascent_rate=round(avg,1) if abs(avg)>=gps_noise_threshold else 0.0
-
-                ground_speed = None
-                if len(history)>=2:
-                    speeds=[]
-                    for i in range(len(history)-1):
-                        t1, _, lat1, lon1 = history[i]
-                        t2, _, lat2, lon2 = history[i+1]
-                        if t1 and t2:
-                            dt=(t2-t1).total_seconds()
-                            if dt>0:
-                                dist = haversine_meters(lat1,lon1,lat2,lon2)
-                                speeds.append(dist/dt)
-                    if speeds:
-                        avg_ms=sum(speeds)/len(speeds)
-                        gs=avg_ms*1.94384
-                        ground_speed=round(gs,1) if abs(gs)>=speed_noise_threshold else 0.0
-
-                processed_ts = datetime.now(timezone.utc).replace(microsecond=0)
-
-                # Insert telemetry
-                cur.execute("""
-                    INSERT INTO sonde.telemetry (
-                      flight_id, timestamp, gps_latitude, gps_longitude,
-                      gps_altitude, pressure, temperature,
-                      signal_strength, speed, ascent_rate,
-                      humidity, hdop, sats,
-                      processed_ts, measurement_ts
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, (
-                    flight_id,
-                    recv_ts,
-                    lat, lng,
-                    int(alt_m) if alt_m is not None else None,
-                    int(pres) if pres is not None else None,
-                    temp_c,
-                    rssi,
-                    ground_speed, ascent_rate,
-                    humidity, hdop, sats,
-                    processed_ts, measurement_ts
-                ))
-
-            # mark processed
-            cur.execute("UPDATE raw.packets SET processed=TRUE WHERE id=%s",
-                        (raw_id,))
-
-        print("Batch complete.")
-
-if __name__=='__main__':
+if __name__ == "__main__":
     main()

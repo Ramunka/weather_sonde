@@ -1,57 +1,59 @@
 #!/usr/bin/env python3
-import os
+"""
+LoRa receiver: RFM9x radio (915 MHz) → raw.packets
+
+Runs on the Raspberry Pi with the radio wired to SPI (CS = D17, RESET = D25).
+Every received packet is stored verbatim with its RSSI; parsing happens in
+backend/etl/parse_raw.py. Requires requirements-pi.txt.
+"""
 from datetime import datetime, timezone
-import psycopg2
+
+import adafruit_rfm9x
 import board
 import busio
 import digitalio
-import adafruit_rfm9x
+import psycopg2
 
-from app.models import FlightStatus
+from config import INGEST_DATABASE_URL, PG_OPTIONS, psycopg2_dsn
 
-# ── DATABASE SETUP ────────────────────────────────────────────────────────────
+FREQUENCY_MHZ = 915.0
+RECEIVE_TIMEOUT_S = 5.0
 
-# Use an env-var for your connection; set DATABASE_URL like:
-#   postgres://username:password@host:port/dbname
-dsn = os.getenv(
-    "DATABASE_URL",
-    "dbname=weather_sonde user=ingest_user password=strong_ingest_password host=localhost")
-conn = psycopg2.connect(dsn)
-conn.autocommit = True
-cur = conn.cursor()
 
-# ── RADIO SETUP (unchanged) ───────────────────────────────────────────────────
-spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
-cs  = digitalio.DigitalInOut(board.D17)
-rst = digitalio.DigitalInOut(board.D25)
-erf = adafruit_rfm9x.RFM9x(spi, cs, rst, 915.0)
-erf.tx_power = 14
+def open_radio():
+    spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
+    cs = digitalio.DigitalInOut(board.D17)
+    reset = digitalio.DigitalInOut(board.D25)
+    return adafruit_rfm9x.RFM9x(spi, cs, reset, FREQUENCY_MHZ)
 
-print("RFM9x receiver initialized at 915 MHz")
 
-# ── MAIN LOOP ─────────────────────────────────────────────────────────────────
-while True:
-    packet = erf.receive(timeout=5.0)
-    if packet is None:
-        print(".", end="", flush=True)
-        continue
+def main():
+    conn = psycopg2.connect(psycopg2_dsn(INGEST_DATABASE_URL), options=PG_OPTIONS)
+    conn.autocommit = True
+    radio = open_radio()
+    print(f"RFM9x receiver initialized at {FREQUENCY_MHZ} MHz")
 
-    # 1) Decode raw payload
-    try:
-        payload = bytes(packet).decode("utf-8")
-    except UnicodeDecodeError:
-        payload = repr(packet)
+    while True:
+        packet = radio.receive(timeout=RECEIVE_TIMEOUT_S)
+        if packet is None:
+            continue
 
-    # 2) Note reception metadata
-    recv_ts = datetime.now(timezone.utc).replace(microsecond=0)
-    rssi    = erf.rssi
+        try:
+            payload = bytes(packet).decode("utf-8")
+        except UnicodeDecodeError:
+            payload = repr(packet)
 
-    # 3) INSERT into raw.packets
-    cur.execute(
-        """
-        INSERT INTO raw.packets (recv_ts, payload, rssi_dbm)
-         VALUES (%s, %s, %s)
-        """,
-        (recv_ts, payload, rssi),
-    )
-    print(f"\n[RAW] {recv_ts}  RSSI={rssi}dBm  payload={payload!r}")
+        recv_ts = datetime.now(timezone.utc)
+        rssi = radio.last_rssi
+        snr = getattr(radio, "last_snr", None)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO raw.packets (recv_ts, payload, rssi_dbm, snr_db) VALUES (%s, %s, %s, %s)",
+                (recv_ts, payload, rssi, snr),
+            )
+        print(f"[RAW] {recv_ts:%H:%M:%S} RSSI={rssi} dBm payload={payload!r}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,69 +1,71 @@
-# audit_telemetry.py
+"""
+Post-flight telemetry audit: finds time gaps and implausible values so the operator can
+confirm a clean data window on the verify page.
 
-import psycopg2
-from datetime import timedelta
+Rows are ordered by device time, falling back to receive time when the sonde had no GPS time.
+"""
+from datetime import timezone
 
-DSN = "dbname=weather_sonde user=ingest_user password=strong_ingest_password host=localhost"
 GAP_THRESHOLD_SECONDS = 5
 
+# field -> (predicate that flags a value, reason)
+OUTLIER_RULES = {
+    "humidity":        (lambda v: v < 0 or v > 100, "out of range (0–100 %)"),
+    "temperature":     (lambda v: abs(v) > 100, "extreme value (|T| > 100 °C)"),
+    "pressure":        (lambda v: v <= 0 or v > 1100, "out of range (0–1100 hPa)"),
+    "signal_strength": (lambda v: v < -130, "very weak signal (< −130 dBm)"),
+}
 
-def audit_flight_telemetry(flight_id):
-    conn = psycopg2.connect(DSN)
-    cur = conn.cursor()
 
-    cur.execute("""
-                SELECT measurement_ts, gps_altitude, temperature, humidity, pressure, signal_strength
-                FROM sonde.telemetry
-                WHERE flight_id = %s
-                ORDER BY measurement_ts ASC
-                """, (flight_id,))
-    rows = cur.fetchall()
-    conn.close()
-
+def audit_rows(rows):
+    """rows: iterable of objects with `ts` and the OUTLIER_RULES fields, in time order."""
+    rows = list(rows)
     if not rows:
-        return {"error": "No telemetry found."}
+        return {"error": "No telemetry found for this flight."}
 
-    total_points = len(rows)
-    gaps = []
-    outliers = []
-
+    gaps, outliers = [], []
     prev_ts = None
     for row in rows:
-        ts, alt, temp, hum, pres, signal = row
-
-        # Gap detection
-        if prev_ts and (ts - prev_ts).total_seconds() > GAP_THRESHOLD_SECONDS:
-            gaps.append({
-                "start": prev_ts.isoformat(),
-                "end": ts.isoformat(),
-                "duration": int((ts - prev_ts).total_seconds())
-            })
+        ts = row.ts if row.ts.tzinfo else row.ts.replace(tzinfo=timezone.utc)
+        if prev_ts is not None:
+            delta = (ts - prev_ts).total_seconds()
+            if delta > GAP_THRESHOLD_SECONDS:
+                gaps.append({"start": prev_ts.isoformat(), "end": ts.isoformat(), "duration": int(delta)})
         prev_ts = ts
 
-        # Outlier detection
-        if hum is not None and (hum < 0 or hum > 100):
-            outliers.append({"timestamp": ts.isoformat(), "field": "humidity", "value": hum, "reason": "out-of-range"})
-        if temp is not None and abs(temp) > 100:
-            outliers.append(
-                {"timestamp": ts.isoformat(), "field": "temperature", "value": temp, "reason": "extreme value"})
-        if signal is not None and signal < -130:
-            outliers.append({"timestamp": ts.isoformat(), "field": "signal_strength", "value": signal,
-                             "reason": "very weak signal"})
+        for field, (is_bad, reason) in OUTLIER_RULES.items():
+            value = getattr(row, field)
+            if value is not None and is_bad(value):
+                outliers.append({"timestamp": ts.isoformat(), "field": field, "value": value, "reason": reason})
 
+    first, last = rows[0].ts, rows[-1].ts
     return {
-        "total_points": total_points,
+        "total_points": len(rows),
         "gaps": gaps,
         "outliers": outliers,
-        "start_ts": rows[0][0].isoformat(),
-        "end_ts": rows[-1][0].isoformat()
+        "start_ts": first.isoformat(),
+        "end_ts": last.isoformat(),
     }
 
 
-# Optional: allow CLI testing
+def audit_flight_telemetry(flight_id):
+    from sqlalchemy import func
+    from app.extensions import db
+    from app.models import Telemetry
+
+    ts = func.coalesce(Telemetry.measurement_ts, Telemetry.timestamp).label("ts")
+    rows = (db.session.query(ts, Telemetry.humidity, Telemetry.temperature,
+                             Telemetry.pressure, Telemetry.signal_strength)
+            .filter(Telemetry.flight_id == flight_id)
+            .order_by(ts, Telemetry.id)
+            .all())
+    return audit_rows(rows)
+
+
 if __name__ == "__main__":
-    import sys
-
-    result = audit_flight_telemetry(int(sys.argv[1]))
     import json
+    import sys
+    from app import create_app
 
-    print(json.dumps(result, indent=2))
+    with create_app().app_context():
+        print(json.dumps(audit_flight_telemetry(int(sys.argv[1])), indent=2))
