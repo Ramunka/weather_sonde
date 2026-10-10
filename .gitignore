@@ -1,29 +1,28 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+.pytest_cache/
 
 # Virtual environments
 venv/
+.venv/
+
+# Local configuration and secrets
 .env
 .env.*
+!.env.example
+*.pem
 
-# IDE files
-*.idea/
-*.vscode/
-*.swp
-*.bak
+# Logs and local databases
 *.log
 *.db
 *.sqlite
-*.pem
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.bak
 
 # Flask instance folder
 instance/
-
-# Alembic cache
-migrations/versions/*.pyc
-
-# Ignore PyCharm metadata
-.lgd-*

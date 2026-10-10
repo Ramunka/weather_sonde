@@ -1,1 +1,1 @@
-Single-database configuration for Flask.
+Flask-Migrate (Alembic) migrations for the 'sonde' schema. The 'raw' schema is in db/raw_schema.sql.

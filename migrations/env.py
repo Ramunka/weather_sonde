@@ -72,9 +72,10 @@ def run_migrations_offline():
         context.run_migrations()
 
 def include_object(object, name, type_, reflected, compare_to):
-    # Exclude objects in the 'raw' schema
-    if getattr(object, "schema", None) == "raw":
-        return False
+    # Alembic only manages the 'sonde' schema; the 'raw' schema (packets, system_status,
+    # NOTIFY trigger) is defined in db/raw_schema.sql.
+    if type_ == "table":
+        return object.schema == "sonde"
     return True
 
 def run_migrations_online():
