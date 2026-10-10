@@ -1,43 +1,37 @@
 {% extends "base.html" %}
-
-{% block title %}Your Mission Dashboard{% endblock %}
+{% block title %}Active flights{% endblock %}
 
 {% block content %}
-<div class="container mt-5">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Welcome, {{ current_user.username }}</h2>
-    <div class="d-flex gap-2">
-      <a href="{{ url_for('main.archive') }}" class="btn btn-outline-dark">Archive</a>
-      <a href="{{ url_for('main.logout') }}" class="btn btn-outline-danger">Logout</a>
-    </div>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+  <h1 class="h3 mb-0">Active flights</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('main.init_flight') }}" class="btn btn-primary">+ New flight</a>
+    <a href="{{ url_for('main.init_device') }}" class="btn btn-outline-primary">+ Register device</a>
   </div>
-
-  <div class="mb-4 d-flex gap-2">
-    <a href="{{ url_for('main.init_flight') }}" class="btn btn-primary">+ Initialize New Flight</a>
-    <a href="{{ url_for('main.init_device') }}" class="btn btn-outline-primary">+ Register New Device</a>
-  </div>
-
-  <h4>Your Flights</h4>
-  {% if flights %}
-    <ul class="list-group">
-      {% for flight in flights %}
-        <li class="list-group-item d-flex justify-content-between align-items-center">
-          <div>
-            <strong>{{ flight.mission_number }}</strong><br>
-            <span style="font-family: courier, monospace; font-style: italic; color:
-              {% if flight.status == 'pre-flight' %}blue
-              {% elif flight.status == 'flight' %}green
-              {% else %}gray{% endif %};">
-              {{ flight.status }}
-            </span><br>
-            <small>Launched: {{ flight.start_time.strftime('%Y-%m-%d %H:%M') }}</small>
-          </div>
-          <a href="{{ url_for('main.flight_dashboard', flight_id=flight.id) }}" class="btn btn-sm btn-outline-primary">View</a>
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="text-muted">No flights yet. Start one above.</p>
-  {% endif %}
 </div>
+
+{% if flights %}
+  <div class="list-group">
+    {% for flight in flights %}
+      <a href="{{ url_for('main.flight_dashboard', flight_id=flight.id) }}"
+         class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+        <div>
+          <div class="fw-semibold">{{ flight.mission_number }}</div>
+          <small class="text-muted">
+            Device {{ flight.device.device_sn if flight.device else "?" }}
+            · planned launch {{ flight.start_time.strftime('%Y-%m-%d %H:%M UTC') if flight.start_time else "N/A" }}
+          </small>
+        </div>
+        <span class="badge rounded-pill {{ 'text-bg-success' if flight.status == 'flight' else 'text-bg-primary' }}">
+          {{ flight.status }}
+        </span>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="text-center text-muted py-5 border rounded">
+    <p class="mb-2">No active flights.</p>
+    <p class="small mb-0">Register a device, then create a flight to start receiving telemetry.</p>
+  </div>
+{% endif %}
 {% endblock %}

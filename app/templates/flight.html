@@ -1,471 +1,156 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Flight Dashboard</title>
-    <script>
-        const flightId = {{ flight.id }};
-        const flightStatus = "{{ flight.status }}";
+{% extends "base.html" %}
+{% block title %}{{ flight.mission_number }}{% endblock %}
+{% block container_class %}container-fluid px-3 px-lg-4{% endblock %}
 
-        function updateTime() {
-            const now = new Date();
-            document.getElementById("utc-time").textContent = now.toUTCString().split(" ")[4];
-            document.getElementById("local-time").textContent = now.toTimeString().split(" ")[0];
-        }
-        setInterval(updateTime, 1000);
-        window.onload = updateTime;
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% endblock %}
 
-        function updateTelemetry() {
-          fetch(`/api/telemetry/${flightId}`)
-            .then(r => r.json())
-            .then(data => {
-              Object.entries(data).forEach(([key, value]) => {
-                const el = document.getElementById(key);
-                if (el) el.textContent = value;
-              });
-            })
-            .catch(console.error);
-        }
+{% macro row(label, id, value="N/A") -%}
+  <tr><th scope="row">{{ label }}</th><td id="{{ id }}">{{ value }}</td></tr>
+{%- endmacro %}
 
-        setInterval(updateTelemetry, 2000);
-        updateTelemetry();
+{% block content %}
+<div id="flight-app" data-flight-id="{{ flight.id }}" data-flight-status="{{ flight.status }}">
 
-        document.addEventListener('DOMContentLoaded', function () {
-        const flightId = {{ flight.id }};
-        const flightStatus = "{{ flight.status }}";
-
-        // Calibrate button
-        const calibrateBtn = document.getElementById('calibrateBtn');
-        const calibrateStatus = document.getElementById('calibrateStatus');
-
-        if (flightStatus !== 'pre-flight') {
-            calibrateBtn.disabled = true;
-            calibrateStatus.textContent = "Calibration disabled: Flight already started.";
-        }
-
-        calibrateBtn.addEventListener('click', function () {
-            calibrateStatus.textContent = "Calibrating... please wait.";
-            calibrateBtn.disabled = true;
-
-            setTimeout(() => {
-                fetch(`/flight/${flightId}/calibrate`, { method: 'POST' })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.error) {
-                            calibrateStatus.textContent = `Error: ${data.error}`;
-                        } else {
-                            calibrateStatus.textContent = "Calibration successful.";
-                        }
-                        if (flightStatus === 'pre-flight') {
-                            calibrateBtn.disabled = false;
-                        }
-                    })
-                    .catch(err => {
-                        calibrateStatus.textContent = "Request failed.";
-                        console.error("Calibration error:", err);
-                        calibrateBtn.disabled = false;
-                    });
-            });
-        });
-
-        // Release button
-        const releaseBtn = document.getElementById('releaseBtn');
-        const releaseStatus = document.getElementById('releaseStatus');
-
-        if (flightStatus !== 'pre-flight') {
-            releaseBtn.disabled = true;
-            releaseStatus.textContent = "Release disabled: Already in flight or ended.";
-        }
-
-        releaseBtn.addEventListener('click', function () {
-            releaseStatus.textContent = "Releasing sonde...";
-            releaseBtn.disabled = true;
-
-            fetch(`/flight/${flightId}/release`, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.error) {
-                        releaseStatus.textContent = `Error: ${data.error}`;
-                        releaseBtn.disabled = false;
-                    } else {
-                        releaseStatus.textContent = `Sonde released at ${data.release_ts}`;
-                        document.getElementById('calibrateBtn').disabled = true;
-                    }
-                })
-                .catch(err => {
-                    releaseStatus.textContent = "Release failed.";
-                    console.error(err);
-                    releaseBtn.disabled = false;
-                });
-        });
-
-        // End button
-        const endFlightBtn = document.getElementById('endFlightBtn');
-        const endStatus = document.getElementById('endStatus');
-
-        if (flightStatus === 'post-flight') {
-            endFlightBtn.disabled = true;
-            endStatus.textContent = "Flight is already ended.";
-        }
-
-        endFlightBtn.addEventListener('click', function () {
-            if (!confirm("Are you sure you want to end this flight? This action is final.")) return;
-
-            endStatus.textContent = "Ending flight...";
-            endFlightBtn.disabled = true;
-
-            fetch(`/flight/${flightId}/end`, { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.error) {
-                        endStatus.textContent = `Error: ${data.error}`;
-                        endFlightBtn.disabled = false;
-                    } else {
-                        endStatus.textContent = "Flight successfully ended.";
-                        document.getElementById('calibrateBtn')?.setAttribute('disabled', 'true');
-                        document.getElementById('releaseBtn')?.setAttribute('disabled', 'true');
-                    }
-                })
-                .catch(err => {
-                    endStatus.textContent = "Failed to end flight.";
-                    console.error(err);
-                    endFlightBtn.disabled = false;
-                });
-        });
-
-        function updateStatus() {
-          fetch(`/api/status/${flightId}`)
-            .then(r => r.json())
-            .then(s => {
-              const balloon   = document.getElementById('balloon');
-              const burst     = document.getElementById('burst');
-              const parachute = document.getElementById('parachute');
-              function setElement(el, pct) {
-                if (pct == null) {
-                  el.style.display = 'none';
-                } else {
-                  el.style.display = '';
-                  el.style.bottom  = pct + '%';
-                }
-              }
-              setElement(balloon,   s.balloon_position);
-              setElement(burst,     s.burst_position);
-              setElement(parachute, s.parachute_position);
-            })
-            .catch(console.error);
-        }
-
-        // run it every 2 s
-        setInterval(updateStatus, 2000);
-        updateStatus();
-
-
-
-
-        function updateLogs() {
-            fetch(`/api/logs/${flightId}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (!data.logs || data.logs.length === 0) return;
-
-                    const logTableBody = document.querySelector("#log-entries tbody");
-                    if (!logTableBody) return;
-
-                    logTableBody.innerHTML = "";
-
-                    data.logs.forEach(log => {
-                        const row = document.createElement("tr");
-
-                        const ts = document.createElement("td");
-                        const date = new Date(log.timestamp);
-                        ts.textContent = date.toISOString().split("T")[1].split(".")[0] + " UTC";
-                        row.appendChild(ts);
-
-                        const level = document.createElement("td");
-                        level.innerHTML = `<span class="log-level log-${log.level.toLowerCase()}">${log.level}</span>`;
-                        row.appendChild(level);
-
-                        const msg = document.createElement("td");
-                        msg.textContent = log.message;
-                        row.appendChild(msg);
-
-                        logTableBody.appendChild(row);
-                    });
-                });
-        }
-
-        setInterval(updateLogs, 5000);
-        updateLogs();
-    });
-
-
-    </script>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" /><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-</head>
-<body>
-    <div class="section header">
-        <table>
-            <tr>
-                <th>Mission #</th>
-                <td id="mission-number">{{ flight.mission_number }}</td>
-                <th>Equipment</th>
-                <td id="equipment">{{ flight.equipment }}</td>
-            </tr>
-            <tr>
-                <th>Start Time</th>
-                <td id="start-time">{{ flight.start_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                <th>Date</th>
-                <td id="date">{{ flight.start_time.strftime('%Y-%m-%d') }}</td>
-            </tr>
-        </table>
-
-        <table>
-            <tr>
-                <th>UTC</th>
-                <td id="utc-time">--:--:--</td>
-            </tr>
-            <tr>
-                <th>Local</th>
-                <td id="local-time">--:--:--</td>
-            </tr>
-        </table>
+  {# ── Header ─────────────────────────────────────────────────────────── #}
+  <div class="panel mb-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+    <div>
+      <h1 class="h4 mb-1">{{ flight.mission_number }}
+        <span class="badge text-bg-secondary align-middle ms-1" id="mission-status">{{ flight.status }}</span>
+        <span class="badge text-bg-light border align-middle" id="flight-phase">{{ status.flight_phase if status else "N/A" }}</span>
+      </h1>
+      <div class="small text-muted">
+        Device <span class="font-monospace">{{ flight.device.device_sn if flight.device else "?" }}</span>
+        · mask <span class="font-monospace">{{ flight.mask }}</span>
+        {% if flight.equipment %}· {{ flight.equipment }}{% endif %}
+        · planned {{ flight.start_time.strftime('%Y-%m-%d %H:%M UTC') if flight.start_time else "N/A" }}
+      </div>
     </div>
-    <div class="section main">
-        <div>
-            <div class="profile-wrapper">
-                <div class="scale">
-                    <div>100 mb</div>
-                    <div>200</div>
-                    <div>300</div>
-                    <div>400</div>
-                    <div>500</div>
-                    <div>600</div>
-                    <div>700</div>
-                    <div>800</div>
-                    <div>900</div>
-                    <div>1000 mb</div>
-                </div>
-                <div class="profile">
-                    <div class="balloon" id="balloon">🎈</div>
-                    <div class="parachute" id="parachute">🪂</div>
-                    <div class="baloon" id="burst">💥</div>
-                </div>
+    <div class="d-flex gap-4 font-monospace">
+      <div><div class="small text-muted">UTC</div><div id="utc-time" class="fs-5">--:--:--</div></div>
+      <div><div class="small text-muted">Local</div><div id="local-time" class="fs-5">--:--:--</div></div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <button id="calibrateBtn" class="btn btn-warning">Calibrate ground</button>
+      <button id="releaseBtn" class="btn btn-danger">Release sonde</button>
+      <button id="endFlightBtn" class="btn btn-dark">End flight</button>
+    </div>
+  </div>
+  <div id="control-status" class="small text-muted mb-3" role="status"></div>
+
+  <div class="row g-3">
+    {# ── Profile + telemetry ──────────────────────────────────────────── #}
+    <div class="col-lg-4">
+      <div class="panel h-100">
+        <h2 class="panel-title">Live telemetry</h2>
+        <div class="d-flex gap-3">
+          <div class="profile-wrapper" title="Pressure profile, 1000 hPa (ground) to 100 hPa">
+            <div class="scale">
+              {% for p in range(100, 1001, 100) %}<div>{{ p }}</div>{% endfor %}
             </div>
-            <table>
-                <tr><th>Temp</th><td id="temp">{{ telemetry.temperature or "N/A" }}</td></tr>
-                <tr><th>Humidity</th><td id="humidity">{{ telemetry.humidity or "N/A" }}</td></tr>
-                <tr><th>Pressure</th><td id="pressure">{{ telemetry.pressure or "N/A" }}</td></tr>
-                <tr><th>Speed</th><td id="speed">{{ telemetry.speed or "N/A" }}</td></tr>
-                <tr><th>GPS Altitude</th><td id="gps-altitude">{{ telemetry.gps_altitude or "N/A" }}</td></tr>
-                <tr><th>Altitude Δ</th><td id="altitude-delta">{{ telemetry.altitude_delta or "N/A" }}</td></tr>
-                <tr><th>Peak Altitude</th><td id="peak-altitude">{{ telemetry.peak_altitude or "N/A" }}</td></tr>
-            </table>
+            <div class="profile">
+              <div class="marker balloon" id="balloon" title="Balloon">🎈</div>
+              <div class="marker burst" id="burst" title="Burst">💥</div>
+              <div class="marker parachute" id="parachute" title="Parachute">🪂</div>
+            </div>
+          </div>
+          <table class="table table-sm data-table mb-0">
+            {{ row("Temp", "temp") }}
+            {{ row("Humidity", "humidity") }}
+            {{ row("Pressure", "pressure") }}
+            {{ row("GPS altitude", "gps-altitude") }}
+            {{ row("Ascent rate", "ascent-rate") }}
+            {{ row("Ground speed", "speed") }}
+            {{ row("Peak altitude", "peak-altitude") }}
+            {{ row("Burst altitude", "burst-altitude") }}
+          </table>
         </div>
-
-        <div>
-        <div class="mission-control-buttons">
-            <button id="calibrateBtn" class="btn btn-warning">Calibrate Ground</button>
-            <p id="calibrateStatus" style="margin-top: 5px; font-size: 0.9em;"></p>
-            <button id="releaseBtn" class="btn btn-danger">Release Sonde</button>
-            <p id="releaseStatus" style="margin-top: 5px; font-size: 0.9em;"></p>
-            <button id="endFlightBtn" class="btn btn-dark">End Flight</button>
-            <p id="endStatus" style="margin-top: 5px; font-size: 0.9em;"></p>
-
-
-        </div>
-
-        <div class="hardware-metrics">
-            <strong>Hardware Metrics</strong>
-            <table>
-                <tr><th>Signal Strength</th><td id="signal-strength">{{ telemetry.signal_strength or "N/A" }}</td></tr>
-            </table>
-        </div>
-
-        <div class="flight-params">
-            <strong>Flight Parameters</strong>
-            <table class="table table-striped table-bordered">
-                <thead>
-                    <tr>
-                        <th>Metric</th>
-                        <th>Expected</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <th>Expected Ascent Rate</th>
-                        <td id="expected-ascent">{{ flight.expected_ascent_rate or "N/A" }}</td>
-                    </tr>
-                    <tr>
-                        <th>Helium Volume</th>
-                        <td id="helium-volume">{{ flight.expected_helium_volume or "N/A" }}</td>
-                    </tr>
-                    <tr>
-                        <th>Burst Altitude</th>
-                        <td id="burst-altitude">{{ flight.expected_burst_altitude or "N/A" }}</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+      </div>
     </div>
-</div>
 
-    <div class="section footer">
-        <h2>GPS Profile</h2>
-        <div id="map" style="width: 100%; height: 300px; border: 1px solid black;"></div>
-
-        <script>
-            let pathLayer;
-            // Center on a default location until we fetch real data:
-            const map = L.map('map').setView([0, 0], 2);
-
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 18,
-                attribution: '© OpenStreetMap'
-            }).addTo(map);
-
-            const markerLayer = L.layerGroup().addTo(map);
-
-            function updateGPS() {
-              const fld = {{ flight.id }};
-              fetch(`/api/gps/${fld}`)
-                .then(res => res.json())
-                .then(data => {
-                  if (!data || data.length === 0) return;
-
-                  if (pathLayer) {
-                    map.removeLayer(pathLayer);
-                    pathLayer = null;
-                  }
-                  markerLayer.clearLayers();
-
-                  // Draw full polyline anyway
-                  const pathCoords = data.map(pt => pt.coords);
-                  pathLayer = L.polyline(pathCoords, { color: 'blue', weight: 3 }).addTo(map);
-
-                  data.forEach(pt => {
-                    // choose icon
-                    let marker;
-                    if (pt.icon === 'start') {
-                      marker = L.marker(pt.coords, { title: "Launch" })
-                                .bindPopup(`Launch @ ${pt.timestamp}`);
-                    }
-                    else if (pt.icon === 'burst') {
-                      marker = L.marker(pt.coords, { title: "Burst" })
-                                .bindPopup(`Burst @ ${pt.timestamp}`);
-                    }
-                    else if (pt.icon === 'end') {
-                      marker = L.marker(pt.coords, { title: "Latest" })
-                                .bindPopup(`Latest @ ${pt.timestamp}`);
-                    }
-                    else {
-                      // small circle without icon
-                      marker = L.circleMarker(pt.coords, { radius: 3 });
-                    }
-                    markerLayer.addLayer(marker);
-
-                    // open only start, burst, end
-                    if (pt.icon) marker.openPopup();
-                  });
-
-                  map.fitBounds(pathLayer.getBounds());
-
-                  if (data && data.length > 0) {
-                  const last = data[data.length - 1];
-                  const [lat, lon] = last.coords;
-                  const alt = last.altitude || 0;
-                  calculateAimFrom(lat, lon, alt);
-                    }
-                })
-                .catch(console.error);
-            }
-
-            // Update every 4 seconds
-            setInterval(updateGPS, 4000);
-            updateGPS();
-        </script>
-    </div>
-    <div class="section status">
-      <div>
-        <h2>Status</h2>
-        <table>
-            <tr><th>Status</th><td id="mission-status">{{ flight.status or "N/A" }}</td></tr>
-            <tr><th>Telecom</th><td id="telecom-status">{{ telemetry.telecom_status or "N/A" }}</td></tr>
-            <tr><th>Last Heard</th><td id="last-heard">{{ telemetry.last_heard or "N/A" }}</td></tr>
+    {# ── Alert lights + link status ───────────────────────────────────── #}
+    <div class="col-lg-4">
+      <div class="panel h-100">
+        <h2 class="panel-title">Alerts</h2>
+        <div class="alert-grid mb-3">
+          {% for id, label in [
+              ("receiver", "Receiver"), ("parser", "Parser"), ("sensor", "Sensor"),
+              ("signal", "Signal"), ("packet", "Packet"), ("age", "Age"),
+              ("calibrated", "Calibrated"), ("burst", "Burst"), ("temp-low", "Temp low"),
+              ("data-degrad", "Meas degrad"), ("gps-fix", "GPS fix"), ("gps-degrad", "GPS degrad")] %}
+            <div id="alert-{{ id }}" class="light off">{{ label }}</div>
+          {% endfor %}
+        </div>
+        <table class="table table-sm data-table mb-0">
+          {{ row("Telecom", "telecom-status") }}
+          {{ row("Last heard", "last-heard") }}
+          {{ row("Last packet", "last-packet") }}
+          {{ row("Signal", "signal-strength") }}
+          {{ row("GPS", "gps-sats") }}
+          {{ row("HDOP", "gps-hdop") }}
         </table>
       </div>
+    </div>
 
-      <div class="antenna-panel">
-        <h3>Antenna Aiming</h3>
-        <label for="antenna-lat">Antenna Latitude:</label>
-        <input type="number" id="antenna-lat" placeholder="e.g., 47.5" step="0.000001">
-        <label for="antenna-lon">Antenna Longitude:</label>
-        <input type="number" id="antenna-lon" placeholder="e.g., -122.1" step="0.000001">
-        <label for="antenna-alt">Antenna Altitude (m):</label>
-        <input type="number" id="antenna-alt" placeholder="e.g., 150" step="1">
+    {# ── Flight parameters + antenna ──────────────────────────────────── #}
+    <div class="col-lg-4">
+      <div class="panel h-100">
+        <h2 class="panel-title">Launch site</h2>
+        <table class="table table-sm data-table">
+          {{ row("Position", "site-position", "%.5f, %.5f"|format(flight.start_latitude, flight.start_longitude) if flight.start_latitude is not none else "N/A") }}
+          {{ row("Elevation", "site-elevation", (flight.elevation ~ " m") if flight.elevation is not none else "N/A") }}
+          {{ row("Calibrated", "site-calibrated", ground_ref.timestamp.strftime('%H:%M:%S UTC') if ground_ref else "Not yet") }}
+          {{ row("Released", "site-released", status.release_ts.strftime('%H:%M:%S UTC') if status and status.release_ts else "Not yet") }}
+        </table>
 
-        <button onclick="calculateAim()">Calculate</button>
-        <p id="aim-result">Awaiting calculation...</p>
+        <h2 class="panel-title mt-3">Antenna aiming</h2>
+        <div class="row g-2 mb-2">
+          <div class="col-4"><input type="number" id="antenna-lat" class="form-control form-control-sm" placeholder="Lat" step="0.000001"
+                                    value="{{ flight.start_latitude if flight.start_latitude is not none else '' }}" aria-label="Antenna latitude"></div>
+          <div class="col-4"><input type="number" id="antenna-lon" class="form-control form-control-sm" placeholder="Lon" step="0.000001"
+                                    value="{{ flight.start_longitude if flight.start_longitude is not none else '' }}" aria-label="Antenna longitude"></div>
+          <div class="col-4"><input type="number" id="antenna-alt" class="form-control form-control-sm" placeholder="Alt (m)" step="1"
+                                    value="{{ flight.elevation if flight.elevation is not none else '' }}" aria-label="Antenna altitude"></div>
+        </div>
+        <p id="aim-result" class="font-monospace small mb-0">Waiting for a GPS position…</p>
       </div>
+    </div>
 
-      <script>
-        function toRadians(deg) {
-          return deg * Math.PI / 180;
-        }
+    {# ── Map ──────────────────────────────────────────────────────────── #}
+    <div class="col-lg-8">
+      <div class="panel">
+        <h2 class="panel-title">GPS track</h2>
+        <div id="map"></div>
+      </div>
+    </div>
 
-        function toDegrees(rad) {
-          return rad * 180 / Math.PI;
-        }
-
-        function calculateAimFrom(lat2, lon2, alt2) {
-          const lat1 = parseFloat(document.getElementById('antenna-lat').value);
-          const lon1 = parseFloat(document.getElementById('antenna-lon').value);
-          const alt1 = parseFloat(document.getElementById('antenna-alt').value || 0);
-
-          const dLat = toRadians(lat2 - lat1);
-          const dLon = toRadians(lon2 - lon1);
-          const rLat1 = toRadians(lat1);
-          const rLat2 = toRadians(lat2);
-
-          const y = Math.sin(dLon) * Math.cos(rLat2);
-          const x = Math.cos(rLat1) * Math.sin(rLat2) -
-                    Math.sin(rLat1) * Math.cos(rLat2) * Math.cos(dLon);
-          let azimuth = Math.atan2(y, x);
-          azimuth = (toDegrees(azimuth) + 360) % 360;
-
-          const R = 6371000;
-          const dX = dLon * R * Math.cos(toRadians((lat1 + lat2)/2));
-          const dY = dLat * R;
-          const groundDist = Math.sqrt(dX*dX + dY*dY);
-          const deltaAlt = alt2 - alt1;
-          const elevation = toDegrees(Math.atan2(deltaAlt, groundDist));
-
-          document.getElementById('aim-result').textContent =
-            `Azimuth: ${azimuth.toFixed(1)}° | Elevation: ${elevation.toFixed(1)}° to (${lat2.toFixed(5)}, ${lon2.toFixed(5)}, ${alt2} m)`;
-        }
-  </script>
-
-      <div class="log-panel">
-        <table class="log-table" id="log-entries">
-            <thead>
-                <tr>
-                    <th>Timestamp</th>
-                    <th>Level</th>
-                    <th>Message</th>
-                </tr>
-            </thead>
+    {# ── Log ──────────────────────────────────────────────────────────── #}
+    <div class="col-lg-4">
+      <div class="panel">
+        <h2 class="panel-title">Event log</h2>
+        <div class="log-panel">
+          <table class="table table-sm log-table mb-0" id="log-entries">
             <tbody>
-                {% for log in logs %}
-                <tr>
-                    <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                    <td><span class="log-level log-{{ log.level|lower }}">{{ log.level }}</span></td>
-                    <td>{{ log.message }}</td>
-                </tr>
-                {% endfor %}
+              {% for log in logs %}
+              <tr>
+                <td class="text-nowrap">{{ log.timestamp.strftime('%H:%M:%S') }}</td>
+                <td><span class="log-level log-{{ log.level|lower }}">{{ log.level }}</span></td>
+                <td>{{ log.message }}</td>
+              </tr>
+              {% else %}
+              <tr><td class="text-muted">No events yet.</td></tr>
+              {% endfor %}
             </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </div>
+  </div>
+</div>
+{% endblock %}
 
-</body>
-</html>
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ url_for('static', filename='js/flight.js') }}"></script>
+{% endblock %}

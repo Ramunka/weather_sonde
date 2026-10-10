@@ -1,59 +1,77 @@
 {% extends "base.html" %}
-
-{% block title %}Verify Telemetry Data{% endblock %}
+{% block title %}Verify data · {{ flight.mission_number }}{% endblock %}
 
 {% block content %}
-<div class="container mt-5">
-  <h2 class="mb-4">Verify Flight Telemetry</h2>
+<h1 class="h3 mb-1">Verify telemetry</h1>
+<p class="text-muted mb-4">{{ flight.mission_number }}</p>
 
-  <form method="POST" action="{{ url_for('main.confirm_data_selection', flight_id=flight_id) }}">
-    <div class="mb-4">
-      <h5>Dataset Summary</h5>
-      <ul>
-        <li><strong>Total Points:</strong> {{ audit.total_points }}</li>
-        <li><strong>Start Timestamp:</strong> {{ audit.start_ts }}</li>
-        <li><strong>End Timestamp:</strong> {{ audit.end_ts }}</li>
+{% if selection %}
+  <div class="alert alert-info">
+    Already verified by <strong>{{ selection.verified_by }}</strong> on
+    {{ selection.created_at.strftime('%Y-%m-%d %H:%M UTC') }}. Saving again replaces that selection.
+  </div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('main.confirm_data_selection', flight_id=flight.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <section class="mb-4">
+    <h2 class="h5">Dataset</h2>
+    <p class="mb-2">{{ audit.total_points }} points recorded.</p>
+    <div class="row g-2 form-narrow">
+      <div class="col-sm-6">
+        <label for="start_ts" class="form-label">Use data from (UTC)</label>
+        <input type="datetime-local" step="1" id="start_ts" name="start_ts" class="form-control"
+               value="{{ (selection.start_ts.isoformat() if selection else audit.start_ts)[:19] }}" required>
+      </div>
+      <div class="col-sm-6">
+        <label for="end_ts" class="form-label">Until (UTC)</label>
+        <input type="datetime-local" step="1" id="end_ts" name="end_ts" class="form-control"
+               value="{{ (selection.end_ts.isoformat() if selection else audit.end_ts)[:19] }}" required>
+      </div>
+    </div>
+  </section>
+
+  <section class="mb-4">
+    <h2 class="h5">Time gaps &gt; 5 s</h2>
+    {% if audit.gaps %}
+      <ul class="list-group">
+        {% for gap in audit.gaps %}
+          <li class="list-group-item font-monospace small">
+            {{ gap.start[:19] }} → {{ gap.end[:19] }} <span class="text-muted">({{ gap.duration }} s)</span>
+          </li>
+        {% endfor %}
       </ul>
-    </div>
+    {% else %}
+      <p class="text-muted">No significant gaps.</p>
+    {% endif %}
+  </section>
 
-    <div class="mb-4">
-      <h5>Detected Time Gaps</h5>
-      {% if audit.gaps %}
-        <ul class="list-group">
-          {% for gap in audit.gaps %}
-            <li class="list-group-item">
-              <strong>{{ gap.start }}</strong> → <strong>{{ gap.end }}</strong> ({{ gap.duration }} s)
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="text-muted">No significant time gaps detected.</p>
-      {% endif %}
-    </div>
+  <section class="mb-4">
+    <h2 class="h5">Outliers</h2>
+    {% if audit.outliers %}
+      <p class="small text-muted">Ticked values are excluded from the cleaned dataset.</p>
+      <ul class="list-group">
+        {% for o in audit.outliers %}
+          <li class="list-group-item">
+            <label class="d-flex justify-content-between align-items-center gap-3 mb-0">
+              <span>
+                <span class="font-monospace small">{{ o.timestamp[:19] }}</span>
+                {{ o.field }} = <strong>{{ o.value }}</strong><br>
+                <small class="text-muted">{{ o.reason }}</small>
+              </span>
+              <input class="form-check-input" type="checkbox" name="exclude_outlier"
+                     value="{{ o.timestamp }}::{{ o.field }}" checked>
+            </label>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-muted">No outliers detected.</p>
+    {% endif %}
+  </section>
 
-    <div class="mb-4">
-      <h5>Detected Outliers</h5>
-      {% if audit.outliers %}
-        <ul class="list-group">
-          {% for o in audit.outliers %}
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              <div>
-                <strong>{{ o.timestamp }}</strong>: {{ o.field }} = {{ o.value }}<br>
-                <small class="text-muted">Reason: {{ o.reason }}</small>
-              </div>
-              <div>
-                <input type="checkbox" name="exclude_outlier" value="{{ o.timestamp }}::{{ o.field }}" checked>
-              </div>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="text-muted">No outliers detected.</p>
-      {% endif %}
-    </div>
-
-    <button type="submit" class="btn btn-success">Confirm and Clean Data</button>
-    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
-  </form>
-</div>
+  <button type="submit" class="btn btn-success">Save verified selection</button>
+  <a href="{{ url_for('main.archive') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+</form>
 {% endblock %}

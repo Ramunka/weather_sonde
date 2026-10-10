@@ -1,245 +1,104 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Initialize New Flight</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 2rem;
-      line-height: 1.5;
-    }
-    h1 {
-      margin-bottom: 1rem;
-    }
-    form {
-      max-width: 500px;
-    }
-    label {
-      display: block;
-      margin-top: 1rem;
-      font-weight: bold;
-    }
-    input, textarea {
-      width: 100%;
-      padding: 0.4rem;
-      margin-top: 0.2rem;
-      box-sizing: border-box;
-    }
-    button {
-      margin-top: 1.5rem;
-      padding: 0.6rem 1.2rem;
-      font-size: 1rem;
-    }
-    .small-text {
-      font-size: 0.9rem;
-      color: #555;
-    }
-    .inline {
-      display: inline-block;
-      width: auto;
-    }
-    .inline + .inline {
-      margin-left: 0.5rem;
-    }
-    a {
-      display: inline-block;
-      margin-top: 2rem;
-      text-decoration: none;
-      color: #007BFF;
-    }
-    a:hover {
-      text-decoration: underline;
-    }
-    #mask-input {
-      width: calc(100% - 120px);
-      display: inline-block;
-    }
-    #generate-mask {
-      width: 100px;
-      display: inline-block;
-    }
-    .flash-container {
-      margin-bottom: 1rem;
-    }
-    .flash {
-      padding: 0.6rem 1rem;
-      border-radius: 4px;
-      margin-bottom: 0.5rem;
-    }
-    .flash.error {
-      background-color: #f8d7da;
-      color: #842029;
-      border: 1px solid #f5c2c7;
-    }
-    .flash.success {
-      background-color: #d1e7dd;
-      color: #0f5132;
-      border: 1px solid #badbcc;
-    }
-  </style>
-</head>
-<body>
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    <div class="flash-container">
-      {% for category, text in messages %}
-        <div class="flash {{ category }}">{{ text }}</div>
-      {% endfor %}
+{% extends "base.html" %}
+{% block title %}New flight{% endblock %}
+
+{% block content %}
+<div class="form-narrow">
+  <h1 class="h3 mb-4">Initialize a new flight</h1>
+
+  {% if not devices %}
+    <div class="alert alert-warning">
+      No devices registered yet. <a href="{{ url_for('main.init_device') }}">Register a device</a> first.
     </div>
   {% endif %}
-{% endwith %}
-
-  <h1>Initialize New Flight</h1>
 
   <form method="POST" id="flight-form">
-    <!-- Device Serial Number + Generate Mask -->
-    <label for="device_sn">Device SN (hex):</label>
-    <div>
-      <input
-        type="text"
-        name="device_sn"
-        id="device_sn"
-        placeholder="e.g. 11951"
-        required
-        class="inline"
-      >
-      <button type="button" id="generate-mask" class="inline">Generate Mask</button>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <fieldset class="mb-4">
+      <legend class="h6 text-muted text-uppercase">Device</legend>
+      <div class="mb-3">
+        <label for="device_sn" class="form-label">Device SN</label>
+        <select name="device_sn" id="device_sn" class="form-select font-monospace" required>
+          <option value="">Select a device…</option>
+          {% for d in devices %}
+            <option value="{{ d.device_sn }}" {{ 'selected' if form.get('device_sn') == d.device_sn }}>
+              {{ d.device_sn }}{% if d.description %} · {{ d.description }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-1">
+        <label for="mask" class="form-label">Flight mask (hex)</label>
+        <div class="input-group">
+          <input type="text" name="mask" id="mask" class="form-control font-monospace"
+                 value="{{ form.get('mask', '') }}" placeholder="Click Generate" readonly required>
+          <button type="button" id="generate-mask" class="btn btn-outline-secondary">Generate</button>
+        </div>
+      </div>
+      <div class="form-text">
+        The sonde only gets through if its EEPROM token was made with this mask. Put it in
+        <code>KEY_MASK</code> in <code>firmware/provision_eeprom</code> and flash it before launch.
+      </div>
+    </fieldset>
+
+    <fieldset class="mb-4">
+      <legend class="h6 text-muted text-uppercase">Mission</legend>
+      <div class="mb-3">
+        <label for="mission_number" class="form-label">Mission number / name</label>
+        <input type="text" name="mission_number" id="mission_number" class="form-control"
+               value="{{ form.get('mission_number', '') }}" placeholder="e.g. M2025-07-01" maxlength="50" required>
+      </div>
+      <div class="mb-3">
+        <label for="equipment" class="form-label">Equipment <span class="text-muted">(optional)</span></label>
+        <input type="text" name="equipment" id="equipment" class="form-control"
+               value="{{ form.get('equipment', '') }}" placeholder="e.g. 600 g latex balloon, 1.2 m parachute" maxlength="100">
+      </div>
+      <div class="mb-3">
+        <label for="planned_launch" class="form-label">Planned launch time (UTC)</label>
+        <input type="datetime-local" name="planned_launch" id="planned_launch" class="form-control"
+               value="{{ form.get('planned_launch', '') }}" required>
+      </div>
+    </fieldset>
+
+    <fieldset class="mb-4">
+      <legend class="h6 text-muted text-uppercase">Launch site</legend>
+      <div class="row g-2">
+        <div class="col-sm-4">
+          <label for="start_latitude" class="form-label">Latitude (°)</label>
+          <input type="number" step="0.00001" min="-90" max="90" name="start_latitude" id="start_latitude"
+                 class="form-control" value="{{ form.get('start_latitude', '') }}" placeholder="47.56168" required>
+        </div>
+        <div class="col-sm-4">
+          <label for="start_longitude" class="form-label">Longitude (°)</label>
+          <input type="number" step="0.00001" min="-180" max="180" name="start_longitude" id="start_longitude"
+                 class="form-control" value="{{ form.get('start_longitude', '') }}" placeholder="-122.02694" required>
+        </div>
+        <div class="col-sm-4">
+          <label for="elevation" class="form-label">Elevation (m)</label>
+          <input type="number" step="1" name="elevation" id="elevation" class="form-control"
+                 value="{{ form.get('elevation', '') }}" placeholder="127" required>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="mb-4">
+      <label for="comments" class="form-label">Notes <span class="text-muted">(optional)</span></label>
+      <textarea name="comments" id="comments" rows="3" class="form-control"
+                placeholder="Weather, payload weight, crew…">{{ form.get('comments', '') }}</textarea>
     </div>
-    <span class="small-text">Enter SN before generating a mask.</span>
 
-    <!-- Mask (read-only) -->
-    <label for="mask">Mask (hex):</label>
-    <input
-      type="text"
-      name="mask"
-      id="mask"
-      placeholder="Click ‘Generate Mask’"
-      readonly
-      required
-    >
-
-    <!-- Mission Number or Name -->
-    <label for="mission_number">Mission Number / Name:</label>
-    <input
-      type="text"
-      name="mission_number"
-      id="mission_number"
-      placeholder="e.g. M2025-07-01"
-      required
-    >
-
-    <!-- Planned Launch Time -->
-    <label for="planned_launch">Planned Launch Time (UTC):</label>
-    <input
-      type="datetime-local"
-      name="planned_launch"
-      id="planned_launch"
-      required
-    >
-
-    <!-- Start Location Coordinates -->
-    <label for="start_latitude">Launch Latitude (°):</label>
-    <input
-      type="number"
-      step="0.00001"
-      name="start_latitude"
-      id="start_latitude"
-      placeholder="e.g. 47.56168"
-      required
-    >
-
-    <label for="start_longitude">Launch Longitude (°):</label>
-    <input
-      type="number"
-      step="0.00001"
-      name="start_longitude"
-      id="start_longitude"
-      placeholder="e.g. -122.02694"
-      required
-    >
-
-
-    <label for="elevation">Launch Elevation (m):</label>
-    <input
-      type="number"
-      name="elevation"
-      id="elevation"
-      placeholder="e.g. 127"
-      required
-    >
-
-
-    <!-- Discussion / Comments -->
-    <label for="comments">Discussion / Notes:</label>
-    <textarea
-      name="comments"
-      id="comments"
-      rows="4"
-      placeholder="Any additional information…"
-      required
-    ></textarea>
-
-    <!-- Submit Button (initially disabled) -->
-    <button type="submit" id="submit-button" disabled>Submit Flight</button>
+    <button type="submit" class="btn btn-primary">Create flight</button>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
   </form>
+</div>
+{% endblock %}
 
-  <a href="{{ url_for('main.dashboard') }}">&larr; Back to Dashboard</a>
-
-  <script>
-    (function() {
-      const deviceSnInput = document.getElementById('device_sn');
-      const maskInput = document.getElementById('mask');
-      const generateMaskBtn = document.getElementById('generate-mask');
-      const submitBtn = document.getElementById('submit-button');
-      const requiredFields = [
-        deviceSnInput,
-        document.getElementById('mission_number'),
-        document.getElementById('planned_launch'),
-        document.getElementById('start_latitude'),
-        document.getElementById('start_longitude'),
-        document.getElementById('comments'),
-        maskInput
-      ];
-
-      // Generate a random 6-digit hex string (uppercase)
-      function createRandomMask() {
-        const rand = Math.floor(Math.random() * 0x1000000); // 0x000000 to 0xFFFFFF
-        return rand.toString(16).toUpperCase().padStart(6, '0');
-      }
-
-      // Enable or disable submit button based on required fields
-      function updateSubmitState() {
-        const allFilled = requiredFields.every(field => field.value.trim() !== '');
-        submitBtn.disabled = !allFilled;
-      }
-
-      // Generate Mask button logic
-      generateMaskBtn.addEventListener('click', function() {
-        const snValue = deviceSnInput.value.trim();
-        if (!snValue) {
-          alert('Please enter the Device SN before generating a mask.');
-          return;
-        }
-        const newMask = createRandomMask();
-        maskInput.value = newMask;
-        updateSubmitState();
-      });
-
-      // When device SN changes, clear the existing mask
-      deviceSnInput.addEventListener('input', function() {
-        maskInput.value = '';
-        updateSubmitState();
-      });
-
-      // Add input listeners to required fields to update submit state
-      requiredFields.forEach(field => {
-        field.addEventListener('input', updateSubmitState);
-      });
-
-      // Initial check (in case browser autofills)
-      updateSubmitState();
-    })();
-  </script>
-</body>
-</html>
+{% block scripts %}
+<script>
+  document.getElementById('generate-mask').addEventListener('click', () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(3));
+    document.getElementById('mask').value =
+      Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+  });
+</script>
+{% endblock %}

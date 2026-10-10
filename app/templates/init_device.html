@@ -1,22 +1,22 @@
 {% extends "base.html" %}
-
-{% block title %}Initialize New Device{% endblock %}
+{% block title %}Register device{% endblock %}
 
 {% block content %}
-<div class="container mt-5">
-  <h2 class="mb-4">Register New Device</h2>
-  <form method="POST" action="{{ url_for('main.init_device') }}">
+<div class="form-narrow">
+  <h1 class="h3 mb-4">Register a device</h1>
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="mb-3">
-      <label for="device_sn" class="form-label">Device Serial Number</label>
-      <input type="text" class="form-control" id="device_sn" name="device_sn" required>
+      <label for="device_sn" class="form-label">Device serial number (hex)</label>
+      <input type="text" class="form-control font-monospace" id="device_sn" name="device_sn"
+             placeholder="e.g. 11951" pattern="(0[xX])?[0-9a-fA-F]+" required>
+      <div class="form-text">The <code>NEW_SN</code> value flashed with the provision_eeprom sketch.</div>
     </div>
-
     <div class="mb-3">
-      <label for="description" class="form-label">Description</label>
-      <input type="text" class="form-control" id="description" name="description">
+      <label for="description" class="form-label">Description <span class="text-muted">(optional)</span></label>
+      <input type="text" class="form-control" id="description" name="description" placeholder="e.g. Sonde #2, blue enclosure">
     </div>
-
-    <button type="submit" class="btn btn-success">Register Device</button>
+    <button type="submit" class="btn btn-success">Register device</button>
     <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
   </form>
 </div>

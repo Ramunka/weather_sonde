@@ -1,0 +1,23 @@
+{# Shared login/sign-up card. Expects: heading, submit_label, submit_class, footer #}
+<div class="auth-card mx-auto mt-5">
+  <h1 class="h3 mb-4 text-center">🎈 {{ heading }}</h1>
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="mb-3">
+      <label for="username" class="form-label">Username</label>
+      <input name="username" id="username" class="form-control" autocomplete="username" required autofocus>
+    </div>
+    <div class="mb-3">
+      <label for="password" class="form-label">Password</label>
+      <div class="input-group">
+        <input type="password" class="form-control" name="password" id="password"
+               autocomplete="{{ password_autocomplete }}" required minlength="{{ min_length or 1 }}">
+        <button class="btn btn-outline-secondary" type="button" aria-label="Show password"
+                onclick="const p = document.getElementById('password'); p.type = p.type === 'password' ? 'text' : 'password';">👁</button>
+      </div>
+      {% if min_length %}<div class="form-text">At least {{ min_length }} characters.</div>{% endif %}
+    </div>
+    <button type="submit" class="btn {{ submit_class }} w-100">{{ submit_label }}</button>
+  </form>
+  <p class="text-center mt-3 small">{{ footer|safe }}</p>
+</div>
